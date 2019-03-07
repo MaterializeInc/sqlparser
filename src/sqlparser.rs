@@ -620,12 +620,22 @@ impl Parser {
         } else if self.parse_keyword("MATERIALIZED") || self.parse_keyword("VIEW") {
             self.prev_token();
             self.parse_create_view()
+        } else if self.parse_keyword("DATA") {
+            self.parse_data_source()
         } else {
             parser_err!(format!(
                 "Unexpected token after CREATE: {:?}",
                 self.peek_token()
             ))
         }
+    }
+
+    pub fn parse_data_source(&mut self) -> Result<SQLStatement, ParserError> {
+        self.expect_keyword("SOURCE")?;
+        let name = self.parse_object_name()?;
+        self.expect_keyword("FROM")?;
+        let url = self.parse_literal_string()?;
+        Ok(SQLStatement::SQLCreateDataSource { name, url })
     }
 
     pub fn parse_create_view(&mut self) -> Result<SQLStatement, ParserError> {

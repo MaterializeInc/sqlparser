@@ -924,6 +924,18 @@ fn parse_create_materialized_view() {
 }
 
 #[test]
+fn parse_create_data_source() {
+    let sql = "CREATE DATA SOURCE foo FROM 'bar'";
+    match verified_stmt(sql) {
+        SQLStatement::SQLCreateDataSource { name, url } => {
+            assert_eq!("foo", name.to_string());
+            assert_eq!("bar", url);
+        }
+        _ => assert!(false)
+    }
+}
+
+#[test]
 fn parse_invalid_subquery_without_parens() {
     let res = parse_sql_statements("SELECT SELECT 1 FROM bar WHERE 1=1 FROM baz");
     assert_eq!(

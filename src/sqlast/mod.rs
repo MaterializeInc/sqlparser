@@ -236,6 +236,11 @@ pub enum SQLStatement {
         /// WHERE
         selection: Option<ASTNode>,
     },
+    /// CREATE DATA SOURCE
+    SQLCreateDataSource {
+        name: SQLObjectName,
+        url: String,
+    },
     /// CREATE VIEW
     SQLCreateView {
         /// View name
@@ -347,6 +352,10 @@ impl ToString for SQLStatement {
                     s += &format!(" WHERE {}", selection.to_string());
                 }
                 s
+            }
+            SQLStatement::SQLCreateDataSource { name, url } => {
+                format!("CREATE DATA SOURCE {} FROM {}", name.to_string(),
+                    Value::SingleQuotedString(url.clone()).to_string())
             }
             SQLStatement::SQLCreateView { name, query, materialized } => {
                 let modifier = if *materialized { " MATERIALIZED" } else { "" };
