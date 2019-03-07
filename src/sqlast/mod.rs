@@ -11,6 +11,11 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+//
+// Additional modifications to this file may have been made by Timely
+// Data, Inc. See the version control log for precise modification
+// information. The derived work is copyright 2019 Timely Data and
+// is not licensed under the terms of the above license.
 
 //! SQL Abstract Syntax Tree (AST) types
 
