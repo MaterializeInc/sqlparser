@@ -24,6 +24,7 @@ use super::dialect::Dialect;
 use super::sqlast::*;
 use super::sqltokenizer::*;
 use chrono::{offset::FixedOffset, DateTime, NaiveDate, NaiveDateTime, NaiveTime};
+use std::error::Error;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ParserError {
@@ -42,6 +43,17 @@ impl From<TokenizerError> for ParserError {
         ParserError::TokenizerError(format!("{:?}", e))
     }
 }
+
+impl std::fmt::Display for ParserError {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "sql parser error: {}", match self {
+            ParserError::TokenizerError(s) => s,
+            ParserError::ParserError(s) => s,
+        })
+    }
+}
+
+impl Error for ParserError {}
 
 /// SQL Parser
 pub struct Parser {
