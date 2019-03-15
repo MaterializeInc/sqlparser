@@ -245,6 +245,7 @@ pub enum SQLStatement {
     SQLCreateDataSource {
         name: SQLObjectName,
         url: String,
+        schema: String,
     },
     /// CREATE VIEW
     SQLCreateView {
@@ -358,9 +359,11 @@ impl ToString for SQLStatement {
                 }
                 s
             }
-            SQLStatement::SQLCreateDataSource { name, url } => {
-                format!("CREATE DATA SOURCE {} FROM {}", name.to_string(),
-                    Value::SingleQuotedString(url.clone()).to_string())
+            SQLStatement::SQLCreateDataSource { name, url, schema } => {
+                format!("CREATE DATA SOURCE {} FROM {} USING SCHEMA {}",
+                    name.to_string(),
+                    Value::SingleQuotedString(url.clone()).to_string(),
+                    Value::SingleQuotedString(schema.clone()).to_string())
             }
             SQLStatement::SQLCreateView { name, query, materialized } => {
                 let modifier = if *materialized { " MATERIALIZED" } else { "" };

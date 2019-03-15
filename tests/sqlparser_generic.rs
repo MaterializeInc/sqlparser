@@ -944,11 +944,12 @@ fn parse_create_materialized_view() {
 
 #[test]
 fn parse_create_data_source() {
-    let sql = "CREATE DATA SOURCE foo FROM 'bar'";
+    let sql = "CREATE DATA SOURCE foo FROM 'bar' USING SCHEMA 'baz'";
     match verified_stmt(sql) {
-        SQLStatement::SQLCreateDataSource { name, url } => {
+        SQLStatement::SQLCreateDataSource { name, url, schema } => {
             assert_eq!("foo", name.to_string());
             assert_eq!("bar", url);
+            assert_eq!("baz", schema);
         }
         _ => assert!(false)
     }
