@@ -920,7 +920,11 @@ fn parse_scalar_subqueries() {
 fn parse_create_view() {
     let sql = "CREATE VIEW myschema.myview AS SELECT foo FROM bar";
     match verified_stmt(sql) {
-        SQLStatement::SQLCreateView { name, query, materialized } => {
+        SQLStatement::SQLCreateView {
+            name,
+            query,
+            materialized,
+        } => {
             assert_eq!("myschema.myview", name.to_string());
             assert_eq!("SELECT foo FROM bar", query.to_string());
             assert!(!materialized);
@@ -933,7 +937,11 @@ fn parse_create_view() {
 fn parse_create_materialized_view() {
     let sql = "CREATE MATERIALIZED VIEW myschema.myview AS SELECT foo FROM bar";
     match verified_stmt(sql) {
-        SQLStatement::SQLCreateView { name, query, materialized } => {
+        SQLStatement::SQLCreateView {
+            name,
+            query,
+            materialized,
+        } => {
             assert_eq!("myschema.myview", name.to_string());
             assert_eq!("SELECT foo FROM bar", query.to_string());
             assert!(materialized);
@@ -951,7 +959,7 @@ fn parse_create_data_source() {
             assert_eq!("bar", url);
             assert_eq!("baz", schema);
         }
-        _ => assert!(false)
+        _ => assert!(false),
     }
 }
 

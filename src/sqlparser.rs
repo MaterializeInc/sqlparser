@@ -46,10 +46,14 @@ impl From<TokenizerError> for ParserError {
 
 impl std::fmt::Display for ParserError {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "sql parser error: {}", match self {
-            ParserError::TokenizerError(s) => s,
-            ParserError::ParserError(s) => s,
-        })
+        write!(
+            f,
+            "sql parser error: {}",
+            match self {
+                ParserError::TokenizerError(s) => s,
+                ParserError::ParserError(s) => s,
+            }
+        )
     }
 }
 
@@ -670,7 +674,11 @@ impl Parser {
         self.expect_keyword("AS")?;
         let query = self.parse_query()?;
         // Optional `WITH [ CASCADED | LOCAL ] CHECK OPTION` is widely supported here.
-        Ok(SQLStatement::SQLCreateView { name, query, materialized })
+        Ok(SQLStatement::SQLCreateView {
+            name,
+            query,
+            materialized,
+        })
     }
 
     pub fn parse_create_table(&mut self) -> Result<SQLStatement, ParserError> {

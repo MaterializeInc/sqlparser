@@ -38,11 +38,19 @@ pub trait Visit<'ast> {
         visit_table_factor(self, table_factor)
     }
 
-    fn visit_table_table_factor(&mut self, name: &'ast SQLObjectName, alias: Option<&'ast SQLIdent>) {
+    fn visit_table_table_factor(
+        &mut self,
+        name: &'ast SQLObjectName,
+        alias: Option<&'ast SQLIdent>,
+    ) {
         visit_table_table_factor(self, name, alias)
     }
 
-    fn visit_derived_table_factor(&mut self, subquery: &'ast SQLQuery, alias: Option<&'ast SQLIdent>) {
+    fn visit_derived_table_factor(
+        &mut self,
+        subquery: &'ast SQLQuery,
+        alias: Option<&'ast SQLIdent>,
+    ) {
         visit_derived_table_factor(self, subquery, alias)
     }
 
@@ -74,7 +82,13 @@ pub trait Visit<'ast> {
         visit_set_expr(self, set_expr)
     }
 
-    fn visit_set_operation(&mut self, left: &'ast SQLSetExpr, op: &'ast SQLSetOperator, right: &'ast SQLSetExpr, all: bool) {
+    fn visit_set_operation(
+        &mut self,
+        left: &'ast SQLSetExpr,
+        op: &'ast SQLSetOperator,
+        right: &'ast SQLSetExpr,
+        all: bool,
+    ) {
         visit_set_operation(self, left, op, right, all)
     }
 
@@ -134,11 +148,22 @@ pub trait Visit<'ast> {
         visit_in_subquery(self, expr, subquery, negated)
     }
 
-    fn visit_between(&mut self, expr: &'ast ASTNode, low: &'ast ASTNode, high: &'ast ASTNode, negated: bool) {
+    fn visit_between(
+        &mut self,
+        expr: &'ast ASTNode,
+        low: &'ast ASTNode,
+        high: &'ast ASTNode,
+        negated: bool,
+    ) {
         visit_between(self, expr, low, high, negated)
     }
 
-    fn visit_binary_expr(&mut self, left: &'ast ASTNode, op: &'ast SQLOperator, right: &'ast ASTNode) {
+    fn visit_binary_expr(
+        &mut self,
+        left: &'ast ASTNode,
+        op: &'ast SQLOperator,
+        right: &'ast ASTNode,
+    ) {
         visit_binary_expr(self, left, op, right)
     }
 
@@ -162,7 +187,12 @@ pub trait Visit<'ast> {
         visit_function(self, ident, args)
     }
 
-    fn visit_case(&mut self, conditions: &'ast Vec<ASTNode>, results: &'ast Vec<ASTNode>, else_result: Option<&'ast ASTNode>) {
+    fn visit_case(
+        &mut self,
+        conditions: &'ast Vec<ASTNode>,
+        results: &'ast Vec<ASTNode>,
+        else_result: Option<&'ast ASTNode>,
+    ) {
         visit_case(self, conditions, results, else_result)
     }
 
@@ -170,7 +200,12 @@ pub trait Visit<'ast> {
         visit_subquery(self, subquery)
     }
 
-    fn visit_insert(&mut self, table_name: &'ast SQLObjectName, columns: &'ast Vec<SQLIdent>, values: &'ast Vec<Vec<ASTNode>>) {
+    fn visit_insert(
+        &mut self,
+        table_name: &'ast SQLObjectName,
+        columns: &'ast Vec<SQLIdent>,
+        values: &'ast Vec<Vec<ASTNode>>,
+    ) {
         visit_insert(self, table_name, columns, values)
     }
 
@@ -182,7 +217,12 @@ pub trait Visit<'ast> {
         visit_values_row(self, row)
     }
 
-    fn visit_copy(&mut self, table_name: &'ast SQLObjectName, columns: &'ast Vec<SQLIdent>, values: &'ast Vec<Option<String>>) {
+    fn visit_copy(
+        &mut self,
+        table_name: &'ast SQLObjectName,
+        columns: &'ast Vec<SQLIdent>,
+        values: &'ast Vec<Option<String>>,
+    ) {
         visit_copy(self, table_name, columns, values)
     }
 
@@ -192,7 +232,12 @@ pub trait Visit<'ast> {
 
     fn visit_copy_values_row(&mut self, _row: Option<&String>) {}
 
-    fn visit_update(&mut self, table_name: &'ast SQLObjectName, assignments: &'ast Vec<SQLAssignment>, selection: Option<&'ast ASTNode>) {
+    fn visit_update(
+        &mut self,
+        table_name: &'ast SQLObjectName,
+        assignments: &'ast Vec<SQLAssignment>,
+        selection: Option<&'ast ASTNode>,
+    ) {
         visit_update(self, table_name, assignments, selection)
     }
 
@@ -204,13 +249,23 @@ pub trait Visit<'ast> {
         visit_delete(self, table_name, selection)
     }
 
-    fn visit_create_data_source(&mut self, name: &'ast SQLObjectName, url: &'ast String, schema: &'ast String) {
+    fn visit_create_data_source(
+        &mut self,
+        name: &'ast SQLObjectName,
+        url: &'ast String,
+        schema: &'ast String,
+    ) {
         visit_create_data_source(self, name, url, schema)
     }
 
     fn visit_literal_string(&mut self, _string: &'ast String) {}
 
-    fn visit_create_view(&mut self, name: &'ast SQLObjectName, query: &'ast SQLQuery, materialized: bool) {
+    fn visit_create_view(
+        &mut self,
+        name: &'ast SQLObjectName,
+        query: &'ast SQLQuery,
+        materialized: bool,
+    ) {
         visit_create_view(self, name, query, materialized)
     }
 
@@ -250,10 +305,14 @@ pub trait Visit<'ast> {
         visit_unique_key(self, key)
     }
 
-    fn visit_foreign_key(&mut self, key: &'ast Key, foreign_table: &'ast SQLObjectName, referred_columns: &'ast Vec<SQLIdent>) {
+    fn visit_foreign_key(
+        &mut self,
+        key: &'ast Key,
+        foreign_table: &'ast SQLObjectName,
+        referred_columns: &'ast Vec<SQLIdent>,
+    ) {
         visit_foreign_key(self, key, foreign_table, referred_columns)
     }
-
 
     fn visit_key(&mut self, key: &'ast Key) {
         visit_key(self, key)
@@ -264,17 +323,43 @@ pub trait Visit<'ast> {
     }
 }
 
-pub fn visit_statement<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, statement: &'ast SQLStatement) {
+pub fn visit_statement<'ast, V: Visit<'ast> + ?Sized>(
+    visitor: &mut V,
+    statement: &'ast SQLStatement,
+) {
     match statement {
         SQLStatement::SQLSelect(query) => visitor.visit_query(query),
-        SQLStatement::SQLInsert { table_name, columns, values } => visitor.visit_insert(table_name, columns, values),
-        SQLStatement::SQLCopy { table_name, columns, values } => visitor.visit_copy(table_name, columns, values),
-        SQLStatement::SQLUpdate { table_name, assignments, selection } => visitor.visit_update(table_name, assignments, selection.as_ref()),
-        SQLStatement::SQLDelete { table_name, selection } => visitor.visit_delete(table_name, selection.as_ref()),
-        SQLStatement::SQLCreateDataSource { name, url, schema } => visitor.visit_create_data_source(name, url, schema),
-        SQLStatement::SQLCreateView { name, query, materialized } => visitor.visit_create_view(name, query, *materialized),
+        SQLStatement::SQLInsert {
+            table_name,
+            columns,
+            values,
+        } => visitor.visit_insert(table_name, columns, values),
+        SQLStatement::SQLCopy {
+            table_name,
+            columns,
+            values,
+        } => visitor.visit_copy(table_name, columns, values),
+        SQLStatement::SQLUpdate {
+            table_name,
+            assignments,
+            selection,
+        } => visitor.visit_update(table_name, assignments, selection.as_ref()),
+        SQLStatement::SQLDelete {
+            table_name,
+            selection,
+        } => visitor.visit_delete(table_name, selection.as_ref()),
+        SQLStatement::SQLCreateDataSource { name, url, schema } => {
+            visitor.visit_create_data_source(name, url, schema)
+        }
+        SQLStatement::SQLCreateView {
+            name,
+            query,
+            materialized,
+        } => visitor.visit_create_view(name, query, *materialized),
         SQLStatement::SQLCreateTable { name, columns } => visitor.visit_create_table(name, columns),
-        SQLStatement::SQLAlterTable { name, operation } => visitor.visit_alter_table(name, operation),
+        SQLStatement::SQLAlterTable { name, operation } => {
+            visitor.visit_alter_table(name, operation)
+        }
     }
 }
 
@@ -327,23 +412,41 @@ pub fn visit_select<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, select: &'as
     }
 }
 
-pub fn visit_select_item<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, select_item: &'ast SQLSelectItem) {
+pub fn visit_select_item<'ast, V: Visit<'ast> + ?Sized>(
+    visitor: &mut V,
+    select_item: &'ast SQLSelectItem,
+) {
     match select_item {
         SQLSelectItem::UnnamedExpression(expr) => visitor.visit_unnamed_expression(expr),
-        SQLSelectItem::ExpressionWithAlias(expr, alias) => visitor.visit_expression_with_alias(expr, alias),
-        SQLSelectItem::QualifiedWildcard(object_name) => visitor.visit_qualified_wildcard(&object_name.0),
+        SQLSelectItem::ExpressionWithAlias(expr, alias) => {
+            visitor.visit_expression_with_alias(expr, alias)
+        }
+        SQLSelectItem::QualifiedWildcard(object_name) => {
+            visitor.visit_qualified_wildcard(&object_name.0)
+        }
         SQLSelectItem::Wildcard => visitor.visit_wildcard(),
     }
 }
 
-pub fn visit_table_factor<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, table_factor: &'ast TableFactor) {
+pub fn visit_table_factor<'ast, V: Visit<'ast> + ?Sized>(
+    visitor: &mut V,
+    table_factor: &'ast TableFactor,
+) {
     match table_factor {
-        TableFactor::Table { name, alias } => visitor.visit_table_table_factor(name, alias.as_ref()),
-        TableFactor::Derived { subquery, alias } => visitor.visit_derived_table_factor(subquery, alias.as_ref()),
+        TableFactor::Table { name, alias } => {
+            visitor.visit_table_table_factor(name, alias.as_ref())
+        }
+        TableFactor::Derived { subquery, alias } => {
+            visitor.visit_derived_table_factor(subquery, alias.as_ref())
+        }
     }
 }
 
-pub fn visit_table_table_factor<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, name: &'ast SQLObjectName, alias: Option<&'ast SQLIdent>) {
+pub fn visit_table_table_factor<'ast, V: Visit<'ast> + ?Sized>(
+    visitor: &mut V,
+    name: &'ast SQLObjectName,
+    alias: Option<&'ast SQLIdent>,
+) {
     visitor.visit_object_name(name);
     match alias {
         Some(ident) => visitor.visit_identifier(ident),
@@ -351,7 +454,11 @@ pub fn visit_table_table_factor<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, 
     }
 }
 
-pub fn visit_derived_table_factor<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, subquery: &'ast SQLQuery, alias: Option<&'ast SQLIdent>) {
+pub fn visit_derived_table_factor<'ast, V: Visit<'ast> + ?Sized>(
+    visitor: &mut V,
+    subquery: &'ast SQLQuery,
+    alias: Option<&'ast SQLIdent>,
+) {
     visitor.visit_subquery(subquery);
     match alias {
         Some(ident) => visitor.visit_identifier(ident),
@@ -374,14 +481,17 @@ pub fn visit_join_operator<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, op: &
     }
 }
 
-pub fn visit_join_constraint<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, constraint: &'ast JoinConstraint) {
+pub fn visit_join_constraint<'ast, V: Visit<'ast> + ?Sized>(
+    visitor: &mut V,
+    constraint: &'ast JoinConstraint,
+) {
     match constraint {
         JoinConstraint::On(expr) => visitor.visit_expr(expr),
         JoinConstraint::Using(idents) => {
             for ident in idents {
                 visitor.visit_identifier(ident);
             }
-        },
+        }
         JoinConstraint::Natural => (),
     }
 }
@@ -404,17 +514,31 @@ pub fn visit_set_expr<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, set_expr: 
     match set_expr {
         SQLSetExpr::Select(select) => visitor.visit_select(select),
         SQLSetExpr::Query(query) => visitor.visit_query(query),
-        SQLSetExpr::SetOperation { left, op, right, all } => visitor.visit_set_operation(left, op, right, *all),
+        SQLSetExpr::SetOperation {
+            left,
+            op,
+            right,
+            all,
+        } => visitor.visit_set_operation(left, op, right, *all),
     }
 }
 
-pub fn visit_set_operation<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, left: &'ast SQLSetExpr, op: &'ast SQLSetOperator, right: &'ast SQLSetExpr, _all: bool) {
+pub fn visit_set_operation<'ast, V: Visit<'ast> + ?Sized>(
+    visitor: &mut V,
+    left: &'ast SQLSetExpr,
+    op: &'ast SQLSetOperator,
+    right: &'ast SQLSetExpr,
+    _all: bool,
+) {
     visitor.visit_set_expr(left);
     visitor.visit_set_operator(op);
     visitor.visit_set_expr(right);
 }
 
-pub fn visit_order_by<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, order_by: &'ast SQLOrderByExpr) {
+pub fn visit_order_by<'ast, V: Visit<'ast> + ?Sized>(
+    visitor: &mut V,
+    order_by: &'ast SQLOrderByExpr,
+) {
     visitor.visit_expr(&order_by.expr);
 }
 
@@ -430,42 +554,79 @@ pub fn visit_expr<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, expr: &'ast AS
         ASTNode::SQLCompoundIdentifier(idents) => visitor.visit_compound_identifier(idents),
         ASTNode::SQLIsNull(expr) => visitor.visit_is_null(expr),
         ASTNode::SQLIsNotNull(expr) => visitor.visit_is_not_null(expr),
-        ASTNode::SQLInList { expr, list, negated } => visitor.visit_in_list(expr, list, *negated),
-        ASTNode::SQLInSubquery { expr, subquery, negated } => visitor.visit_in_subquery(expr, subquery, *negated),
-        ASTNode::SQLBetween { expr, negated, low, high } => visitor.visit_between(expr, low, high, *negated),
+        ASTNode::SQLInList {
+            expr,
+            list,
+            negated,
+        } => visitor.visit_in_list(expr, list, *negated),
+        ASTNode::SQLInSubquery {
+            expr,
+            subquery,
+            negated,
+        } => visitor.visit_in_subquery(expr, subquery, *negated),
+        ASTNode::SQLBetween {
+            expr,
+            negated,
+            low,
+            high,
+        } => visitor.visit_between(expr, low, high, *negated),
         ASTNode::SQLBinaryExpr { left, op, right } => visitor.visit_binary_expr(left, op, right),
         ASTNode::SQLCast { expr, data_type } => visitor.visit_cast(expr, data_type),
         ASTNode::SQLNested(expr) => visitor.visit_nested(expr),
         ASTNode::SQLUnary { expr, operator } => visitor.visit_unary(expr, operator),
         ASTNode::SQLValue(val) => visitor.visit_value(val),
         ASTNode::SQLFunction { id, args } => visitor.visit_function(id, args),
-        ASTNode::SQLCase { conditions, results, else_result } => visitor.visit_case(conditions, results, else_result.as_ref().map(|r| r.as_ref())),
+        ASTNode::SQLCase {
+            conditions,
+            results,
+            else_result,
+        } => visitor.visit_case(
+            conditions,
+            results,
+            else_result.as_ref().map(|r| r.as_ref()),
+        ),
         ASTNode::SQLSubquery(query) => visitor.visit_subquery(query),
     }
 }
 
-pub fn visit_unnamed_expression<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, expr: &'ast ASTNode) {
+pub fn visit_unnamed_expression<'ast, V: Visit<'ast> + ?Sized>(
+    visitor: &mut V,
+    expr: &'ast ASTNode,
+) {
     visitor.visit_expr(expr);
 }
 
-pub fn visit_expression_with_alias<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, expr: &'ast ASTNode, alias: &'ast SQLIdent) {
+pub fn visit_expression_with_alias<'ast, V: Visit<'ast> + ?Sized>(
+    visitor: &mut V,
+    expr: &'ast ASTNode,
+    alias: &'ast SQLIdent,
+) {
     visitor.visit_expr(expr);
     visitor.visit_identifier(alias);
 }
 
-pub fn visit_object_name<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, object_name: &'ast SQLObjectName) {
+pub fn visit_object_name<'ast, V: Visit<'ast> + ?Sized>(
+    visitor: &mut V,
+    object_name: &'ast SQLObjectName,
+) {
     for ident in &object_name.0 {
         visitor.visit_identifier(ident)
     }
 }
 
-pub fn visit_compound_identifier<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, idents: &'ast Vec<SQLIdent>) {
+pub fn visit_compound_identifier<'ast, V: Visit<'ast> + ?Sized>(
+    visitor: &mut V,
+    idents: &'ast Vec<SQLIdent>,
+) {
     for ident in idents {
         visitor.visit_identifier(ident);
     }
 }
 
-pub fn visit_qualified_wildcard<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, idents: &'ast Vec<SQLIdent>) {
+pub fn visit_qualified_wildcard<'ast, V: Visit<'ast> + ?Sized>(
+    visitor: &mut V,
+    idents: &'ast Vec<SQLIdent>,
+) {
     for ident in idents {
         visitor.visit_identifier(ident);
     }
@@ -479,31 +640,56 @@ pub fn visit_is_not_null<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, expr: &
     visitor.visit_expr(expr);
 }
 
-pub fn visit_in_list<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, expr: &'ast ASTNode, list: &'ast Vec<ASTNode>, _negated: bool) {
+pub fn visit_in_list<'ast, V: Visit<'ast> + ?Sized>(
+    visitor: &mut V,
+    expr: &'ast ASTNode,
+    list: &'ast Vec<ASTNode>,
+    _negated: bool,
+) {
     visitor.visit_expr(expr);
     for e in list {
         visitor.visit_expr(e);
     }
 }
 
-pub fn visit_in_subquery<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, expr: &'ast ASTNode, subquery: &'ast SQLQuery, _negated: bool) {
+pub fn visit_in_subquery<'ast, V: Visit<'ast> + ?Sized>(
+    visitor: &mut V,
+    expr: &'ast ASTNode,
+    subquery: &'ast SQLQuery,
+    _negated: bool,
+) {
     visitor.visit_expr(expr);
     visitor.visit_query(subquery);
 }
 
-pub fn visit_between<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, expr: &'ast ASTNode, low: &'ast ASTNode, high: &'ast ASTNode, _negated: bool) {
+pub fn visit_between<'ast, V: Visit<'ast> + ?Sized>(
+    visitor: &mut V,
+    expr: &'ast ASTNode,
+    low: &'ast ASTNode,
+    high: &'ast ASTNode,
+    _negated: bool,
+) {
     visitor.visit_expr(expr);
     visitor.visit_expr(low);
     visitor.visit_expr(high);
 }
 
-pub fn visit_binary_expr<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, left: &'ast ASTNode, op: &'ast SQLOperator, right: &'ast ASTNode) {
+pub fn visit_binary_expr<'ast, V: Visit<'ast> + ?Sized>(
+    visitor: &mut V,
+    left: &'ast ASTNode,
+    op: &'ast SQLOperator,
+    right: &'ast ASTNode,
+) {
     visitor.visit_expr(left);
     visitor.visit_operator(op);
     visitor.visit_expr(right);
 }
 
-pub fn visit_cast<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, expr: &'ast ASTNode, data_type: &'ast SQLType) {
+pub fn visit_cast<'ast, V: Visit<'ast> + ?Sized>(
+    visitor: &mut V,
+    expr: &'ast ASTNode,
+    data_type: &'ast SQLType,
+) {
     visitor.visit_expr(expr);
     visitor.visit_type(data_type);
 }
@@ -512,19 +698,32 @@ pub fn visit_nested<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, expr: &'ast 
     visitor.visit_expr(expr);
 }
 
-pub fn visit_unary<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, expr: &'ast ASTNode, op: &'ast SQLOperator) {
+pub fn visit_unary<'ast, V: Visit<'ast> + ?Sized>(
+    visitor: &mut V,
+    expr: &'ast ASTNode,
+    op: &'ast SQLOperator,
+) {
     visitor.visit_expr(expr);
     visitor.visit_operator(op);
 }
 
-pub fn visit_function<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, ident: &'ast SQLIdent, args: &'ast Vec<ASTNode>) {
+pub fn visit_function<'ast, V: Visit<'ast> + ?Sized>(
+    visitor: &mut V,
+    ident: &'ast SQLIdent,
+    args: &'ast Vec<ASTNode>,
+) {
     visitor.visit_identifier(ident);
     for arg in args {
         visitor.visit_expr(arg);
     }
 }
 
-pub fn visit_case<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, conditions: &'ast Vec<ASTNode>, results: &'ast Vec<ASTNode>, else_result: Option<&'ast ASTNode>) {
+pub fn visit_case<'ast, V: Visit<'ast> + ?Sized>(
+    visitor: &mut V,
+    conditions: &'ast Vec<ASTNode>,
+    results: &'ast Vec<ASTNode>,
+    else_result: Option<&'ast ASTNode>,
+) {
     for cond in conditions {
         visitor.visit_expr(cond);
     }
@@ -541,7 +740,12 @@ pub fn visit_subquery<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, subquery: 
     visitor.visit_query(subquery)
 }
 
-pub fn visit_insert<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, table_name: &'ast SQLObjectName, columns: &'ast Vec<SQLIdent>, values: &'ast Vec<Vec<ASTNode>>) {
+pub fn visit_insert<'ast, V: Visit<'ast> + ?Sized>(
+    visitor: &mut V,
+    table_name: &'ast SQLObjectName,
+    columns: &'ast Vec<SQLIdent>,
+    values: &'ast Vec<Vec<ASTNode>>,
+) {
     visitor.visit_object_name(table_name);
     for column in columns {
         visitor.visit_identifier(column);
@@ -549,7 +753,10 @@ pub fn visit_insert<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, table_name: 
     visitor.visit_values_clause(values);
 }
 
-pub fn visit_values_clause<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, rows: &'ast Vec<Vec<ASTNode>>) {
+pub fn visit_values_clause<'ast, V: Visit<'ast> + ?Sized>(
+    visitor: &mut V,
+    rows: &'ast Vec<Vec<ASTNode>>,
+) {
     for row in rows {
         visitor.visit_values_row(row)
     }
@@ -561,7 +768,12 @@ pub fn visit_values_row<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, row: &'a
     }
 }
 
-pub fn visit_copy<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, table_name: &'ast SQLObjectName, columns: &'ast Vec<SQLIdent>, values: &'ast Vec<Option<String>>) {
+pub fn visit_copy<'ast, V: Visit<'ast> + ?Sized>(
+    visitor: &mut V,
+    table_name: &'ast SQLObjectName,
+    columns: &'ast Vec<SQLIdent>,
+    values: &'ast Vec<Option<String>>,
+) {
     visitor.visit_object_name(table_name);
     for column in columns {
         visitor.visit_identifier(column);
@@ -569,13 +781,21 @@ pub fn visit_copy<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, table_name: &'
     visitor.visit_copy_values(values);
 }
 
-pub fn visit_copy_values<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, values: &'ast Vec<Option<String>>) {
+pub fn visit_copy_values<'ast, V: Visit<'ast> + ?Sized>(
+    visitor: &mut V,
+    values: &'ast Vec<Option<String>>,
+) {
     for value in values {
         visitor.visit_copy_values_row(value.as_ref());
     }
 }
 
-pub fn visit_update<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, table_name: &'ast SQLObjectName, assignments: &'ast Vec<SQLAssignment>, selection: Option<&'ast ASTNode>) {
+pub fn visit_update<'ast, V: Visit<'ast> + ?Sized>(
+    visitor: &mut V,
+    table_name: &'ast SQLObjectName,
+    assignments: &'ast Vec<SQLAssignment>,
+    selection: Option<&'ast ASTNode>,
+) {
     visitor.visit_object_name(&table_name);
     for assignment in assignments {
         visitor.visit_assignment(assignment);
@@ -586,12 +806,19 @@ pub fn visit_update<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, table_name: 
     }
 }
 
-pub fn visit_assignment<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, assignment: &'ast SQLAssignment) {
+pub fn visit_assignment<'ast, V: Visit<'ast> + ?Sized>(
+    visitor: &mut V,
+    assignment: &'ast SQLAssignment,
+) {
     visitor.visit_identifier(&assignment.id);
     visitor.visit_expr(&assignment.value);
 }
 
-pub fn visit_delete<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, table_name: &'ast SQLObjectName, selection: Option<&'ast ASTNode>) {
+pub fn visit_delete<'ast, V: Visit<'ast> + ?Sized>(
+    visitor: &mut V,
+    table_name: &'ast SQLObjectName,
+    selection: Option<&'ast ASTNode>,
+) {
     visitor.visit_object_name(table_name);
     match selection {
         Some(expr) => visitor.visit_where(expr),
@@ -599,50 +826,80 @@ pub fn visit_delete<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, table_name: 
     }
 }
 
-pub fn visit_create_data_source<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, name: &'ast SQLObjectName, url: &'ast String, schema: &'ast String) {
+pub fn visit_create_data_source<'ast, V: Visit<'ast> + ?Sized>(
+    visitor: &mut V,
+    name: &'ast SQLObjectName,
+    url: &'ast String,
+    schema: &'ast String,
+) {
     visitor.visit_object_name(name);
     visitor.visit_literal_string(url);
     visitor.visit_literal_string(schema);
 }
 
-pub fn visit_create_view<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, name: &'ast SQLObjectName, query: &'ast SQLQuery, _materialized: bool) {
+pub fn visit_create_view<'ast, V: Visit<'ast> + ?Sized>(
+    visitor: &mut V,
+    name: &'ast SQLObjectName,
+    query: &'ast SQLQuery,
+    _materialized: bool,
+) {
     visitor.visit_object_name(name);
     visitor.visit_query(&query);
 }
 
-pub fn visit_create_table<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, name: &'ast SQLObjectName, columns: &'ast Vec<SQLColumnDef>) {
+pub fn visit_create_table<'ast, V: Visit<'ast> + ?Sized>(
+    visitor: &mut V,
+    name: &'ast SQLObjectName,
+    columns: &'ast Vec<SQLColumnDef>,
+) {
     visitor.visit_object_name(name);
     for column in columns {
         visitor.visit_column_def(column);
     }
 }
 
-pub fn visit_column_def<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, column_def: &'ast SQLColumnDef) {
+pub fn visit_column_def<'ast, V: Visit<'ast> + ?Sized>(
+    visitor: &mut V,
+    column_def: &'ast SQLColumnDef,
+) {
     visitor.visit_identifier(&column_def.name);
     visitor.visit_type(&column_def.data_type);
     visitor.visit_column_default(column_def.default.as_ref());
 }
 
-pub fn visit_column_default<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, default: Option<&'ast ASTNode>) {
+pub fn visit_column_default<'ast, V: Visit<'ast> + ?Sized>(
+    visitor: &mut V,
+    default: Option<&'ast ASTNode>,
+) {
     match default {
         Some(expr) => visitor.visit_expr(expr),
         None => (),
     }
 }
 
-pub fn visit_alter_table<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, name: &'ast SQLObjectName, operation: &'ast AlterOperation) {
+pub fn visit_alter_table<'ast, V: Visit<'ast> + ?Sized>(
+    visitor: &mut V,
+    name: &'ast SQLObjectName,
+    operation: &'ast AlterOperation,
+) {
     visitor.visit_object_name(name);
     visitor.visit_alter_operation(operation);
 }
 
-pub fn visit_alter_operation<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, operation: &'ast AlterOperation) {
+pub fn visit_alter_operation<'ast, V: Visit<'ast> + ?Sized>(
+    visitor: &mut V,
+    operation: &'ast AlterOperation,
+) {
     match operation {
         AlterOperation::AddConstraint(table_key) => visitor.visit_alter_add_constraint(table_key),
         AlterOperation::RemoveConstraint { name } => visitor.visit_alter_remove_constraint(name),
     }
 }
 
-pub fn visit_alter_add_constraint<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, table_key: &'ast TableKey) {
+pub fn visit_alter_add_constraint<'ast, V: Visit<'ast> + ?Sized>(
+    visitor: &mut V,
+    table_key: &'ast TableKey,
+) {
     visitor.visit_table_key(table_key);
 }
 
@@ -651,7 +908,11 @@ pub fn visit_table_key<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, table_key
         TableKey::PrimaryKey(key) => visitor.visit_primary_key(key),
         TableKey::UniqueKey(key) => visitor.visit_unique_key(key),
         TableKey::Key(key) => visitor.visit_key(key),
-        TableKey::ForeignKey { key, foreign_table, referred_columns } => visitor.visit_foreign_key(key, foreign_table, referred_columns),
+        TableKey::ForeignKey {
+            key,
+            foreign_table,
+            referred_columns,
+        } => visitor.visit_foreign_key(key, foreign_table, referred_columns),
     }
 }
 
@@ -663,7 +924,12 @@ pub fn visit_unique_key<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, key: &'a
     visitor.visit_key(key)
 }
 
-pub fn visit_foreign_key<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, key: &'ast Key, foreign_table: &'ast SQLObjectName, referred_columns: &'ast Vec<SQLIdent>) {
+pub fn visit_foreign_key<'ast, V: Visit<'ast> + ?Sized>(
+    visitor: &mut V,
+    key: &'ast Key,
+    foreign_table: &'ast SQLObjectName,
+    referred_columns: &'ast Vec<SQLIdent>,
+) {
     visitor.visit_key(key);
     visitor.visit_object_name(foreign_table);
     for column in referred_columns {
@@ -678,17 +944,20 @@ pub fn visit_key<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, key: &'ast Key)
     }
 }
 
-pub fn visit_alter_remove_constraint<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, name: &'ast SQLIdent) {
+pub fn visit_alter_remove_constraint<'ast, V: Visit<'ast> + ?Sized>(
+    visitor: &mut V,
+    name: &'ast SQLIdent,
+) {
     visitor.visit_identifier(name);
 }
 
 #[cfg(test)]
 mod tests {
+    use super::Visit;
+    use crate::dialect::GenericSqlDialect;
     use crate::sqlast::SQLIdent;
     use crate::sqlparser::Parser;
-    use crate::dialect::GenericSqlDialect;
     use std::error::Error;
-    use super::Visit;
 
     #[test]
     fn test_basic_visitor() -> Result<(), Box<dyn Error>> {
@@ -702,41 +971,30 @@ mod tests {
             }
         }
 
-        let stmts = Parser::parse_sql(&GenericSqlDialect {}, r#"
+        let stmts = Parser::parse_sql(
+            &GenericSqlDialect {},
+            r#"
             SELECT *, foo.*, bar FROM baz JOIN zab ON baz.a = zab.b WHERE q;
             INSERT INTO db.bazzle (a, b, c) VALUES (1, 2, 3);
             DELETE FROM db2.razzle WHERE z = y AND Y = Z AND w BETWEEN 2 AND x;
-"#.into())?;
+"#
+            .into(),
+        )?;
 
-        let mut visitor = Visitor { seen_idents: Vec::new() };
+        let mut visitor = Visitor {
+            seen_idents: Vec::new(),
+        };
         for stmt in &stmts {
             visitor.visit_statement(stmt);
         }
 
-        assert_eq!(visitor.seen_idents, &[
-            "foo",
-            "bar",
-            "baz",
-            "zab",
-            "baz",
-            "a",
-            "zab",
-            "b",
-            "q",
-            "db",
-            "bazzle",
-            "a",
-            "b",
-            "c",
-            "db2",
-            "razzle",
-            "z",
-            "y",
-            "Y",
-            "Z",
-            "w",
-            "x"
-        ]);
+        assert_eq!(
+            visitor.seen_idents,
+            &[
+                "foo", "bar", "baz", "zab", "baz", "a", "zab", "b", "q", "db", "bazzle", "a", "b",
+                "c", "db2", "razzle", "z", "y", "Y", "Z", "w", "x"
+            ]
+        );
 
         Ok(())
     }

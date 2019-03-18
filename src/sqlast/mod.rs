@@ -360,15 +360,24 @@ impl ToString for SQLStatement {
                 }
                 s
             }
-            SQLStatement::SQLCreateDataSource { name, url, schema } => {
-                format!("CREATE DATA SOURCE {} FROM {} USING SCHEMA {}",
-                    name.to_string(),
-                    Value::SingleQuotedString(url.clone()).to_string(),
-                    Value::SingleQuotedString(schema.clone()).to_string())
-            }
-            SQLStatement::SQLCreateView { name, query, materialized } => {
+            SQLStatement::SQLCreateDataSource { name, url, schema } => format!(
+                "CREATE DATA SOURCE {} FROM {} USING SCHEMA {}",
+                name.to_string(),
+                Value::SingleQuotedString(url.clone()).to_string(),
+                Value::SingleQuotedString(schema.clone()).to_string()
+            ),
+            SQLStatement::SQLCreateView {
+                name,
+                query,
+                materialized,
+            } => {
                 let modifier = if *materialized { " MATERIALIZED" } else { "" };
-                format!("CREATE{} VIEW {} AS {}", modifier, name.to_string(), query.to_string())
+                format!(
+                    "CREATE{} VIEW {} AS {}",
+                    modifier,
+                    name.to_string(),
+                    query.to_string()
+                )
             }
             SQLStatement::SQLCreateTable { name, columns } => format!(
                 "CREATE TABLE {} ({})",
