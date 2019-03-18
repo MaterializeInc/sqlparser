@@ -964,6 +964,28 @@ fn parse_create_data_source() {
 }
 
 #[test]
+fn parse_peek() {
+    let sql = "PEEK foo.bar";
+    match verified_stmt(sql) {
+        SQLStatement::SQLPeek { name } => {
+            assert_eq!("foo.bar", name.to_string());
+        }
+        _ => assert!(false),
+    }
+}
+
+#[test]
+fn parse_tail() {
+    let sql = "TAIL foo.bar";
+    match verified_stmt(sql) {
+        SQLStatement::SQLTail { name } => {
+            assert_eq!("foo.bar", name.to_string());
+        }
+        _ => assert!(false),
+    }
+}
+
+#[test]
 fn parse_invalid_subquery_without_parens() {
     let res = parse_sql_statements("SELECT SELECT 1 FROM bar WHERE 1=1 FROM baz");
     assert_eq!(

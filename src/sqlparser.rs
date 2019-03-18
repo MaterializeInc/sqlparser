@@ -119,6 +119,8 @@ impl Parser {
                     "INSERT" => Ok(self.parse_insert()?),
                     "ALTER" => Ok(self.parse_alter()?),
                     "COPY" => Ok(self.parse_copy()?),
+                    "PEEK" => Ok(SQLStatement::SQLPeek { name: self.parse_object_name()? }),
+                    "TAIL" => Ok(SQLStatement::SQLTail { name: self.parse_object_name()? }),
                     _ => parser_err!(format!(
                         "Unexpected keyword {:?} at the beginning of a statement",
                         w.to_string()

@@ -268,6 +268,13 @@ pub enum SQLStatement {
         name: SQLObjectName,
         operation: AlterOperation,
     },
+    /// PEEK
+    SQLPeek {
+        name: SQLObjectName,
+    },
+    SQLTail {
+        name: SQLObjectName,
+    }
 }
 
 impl ToString for SQLStatement {
@@ -390,7 +397,13 @@ impl ToString for SQLStatement {
             ),
             SQLStatement::SQLAlterTable { name, operation } => {
                 format!("ALTER TABLE {} {}", name.to_string(), operation.to_string())
-            }
+            },
+            SQLStatement::SQLPeek { name } => {
+                format!("PEEK {}", name.to_string())
+            },
+            SQLStatement::SQLTail { name } => {
+                format!("TAIL {}", name.to_string())
+            },
         }
     }
 }

@@ -321,6 +321,14 @@ pub trait Visit<'ast> {
     fn visit_alter_remove_constraint(&mut self, name: &'ast SQLIdent) {
         visit_alter_remove_constraint(self, name)
     }
+
+    fn visit_peek(&mut self, name: &'ast SQLObjectName) {
+        visit_peek(self, name)
+    }
+
+    fn visit_tail(&mut self, name: &'ast SQLObjectName) {
+        visit_tail(self, name)
+    }
 }
 
 pub fn visit_statement<'ast, V: Visit<'ast> + ?Sized>(
@@ -359,6 +367,12 @@ pub fn visit_statement<'ast, V: Visit<'ast> + ?Sized>(
         SQLStatement::SQLCreateTable { name, columns } => visitor.visit_create_table(name, columns),
         SQLStatement::SQLAlterTable { name, operation } => {
             visitor.visit_alter_table(name, operation)
+        },
+        SQLStatement::SQLPeek { name } => {
+            visitor.visit_peek(name);
+        },
+        SQLStatement::SQLTail { name } => {
+            visitor.visit_tail(name);
         }
     }
 }
@@ -949,6 +963,20 @@ pub fn visit_alter_remove_constraint<'ast, V: Visit<'ast> + ?Sized>(
     name: &'ast SQLIdent,
 ) {
     visitor.visit_identifier(name);
+}
+
+pub fn visit_peek<'ast, V: Visit<'ast> + ?Sized>(
+    visitor: &mut V,
+    name: &'ast SQLObjectName,
+) {
+    visitor.visit_object_name(name);
+}
+
+pub fn visit_tail<'ast, V: Visit<'ast> + ?Sized>(
+    visitor: &mut V,
+    name: &'ast SQLObjectName,
+) {
+    visitor.visit_object_name(name);
 }
 
 #[cfg(test)]
