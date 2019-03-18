@@ -1,3 +1,8 @@
+// Copyright 2019 Timely Data, Inc. All rights reserved.
+//
+// This file may not be used or distributed without the express permission of
+// Timely Data, Inc.
+
 //! SQL AST traversal.
 
 use super::*;
