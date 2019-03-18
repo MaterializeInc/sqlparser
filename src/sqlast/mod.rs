@@ -24,6 +24,7 @@ mod sql_operator;
 mod sqltype;
 mod table_key;
 mod value;
+pub mod visit;
 
 pub use self::query::{
     Cte, Join, JoinConstraint, JoinOperator, SQLOrderByExpr, SQLQuery, SQLSelect, SQLSelectItem,
