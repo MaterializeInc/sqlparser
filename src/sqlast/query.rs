@@ -138,7 +138,7 @@ pub struct SQLSelect {
     /// WHERE
     pub selection: Option<ASTNode>,
     /// GROUP BY
-    pub group_by: Option<Vec<ASTNode>>,
+    pub group_by: Vec<ASTNode>,
     /// HAVING
     pub having: Option<ASTNode>,
 }
@@ -162,10 +162,10 @@ impl ToString for SQLSelect {
         if let Some(ref selection) = self.selection {
             s += &format!(" WHERE {}", selection.to_string());
         }
-        if let Some(ref group_by) = self.group_by {
+        if !self.group_by.is_empty() {
             s += &format!(
                 " GROUP BY {}",
-                group_by
+                self.group_by
                     .iter()
                     .map(|g| g.to_string())
                     .collect::<Vec<String>>()

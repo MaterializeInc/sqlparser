@@ -1373,9 +1373,9 @@ impl Parser {
         };
 
         let group_by = if self.parse_keywords(vec!["GROUP", "BY"]) {
-            Some(self.parse_expr_list()?)
+            self.parse_expr_list()?
         } else {
-            None
+            Vec::new()
         };
 
         let having = if self.parse_keyword("HAVING") {

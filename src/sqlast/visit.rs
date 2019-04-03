@@ -416,9 +416,8 @@ pub fn visit_select<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, select: &'as
         Some(ref expr) => visitor.visit_where(expr),
         None => (),
     }
-    match select.group_by {
-        Some(ref exprs) => visitor.visit_group_by(exprs),
-        None => (),
+    if !select.group_by.is_empty() {
+        visitor.visit_group_by(&select.group_by);
     }
     match select.having {
         Some(ref expr) => visitor.visit_having(expr),

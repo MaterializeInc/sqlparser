@@ -404,10 +404,10 @@ fn parse_select_group_by() {
     let sql = "SELECT id, fname, lname FROM customer GROUP BY lname, fname";
     let select = verified_only_select(sql);
     assert_eq!(
-        Some(vec![
+        vec![
             ASTNode::SQLIdentifier("lname".to_string()),
             ASTNode::SQLIdentifier("fname".to_string()),
-        ]),
+        ],
         select.group_by
     );
 }
