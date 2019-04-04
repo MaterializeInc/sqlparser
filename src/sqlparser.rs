@@ -115,6 +115,7 @@ impl Parser {
                         Ok(SQLStatement::SQLSelect(self.parse_query()?))
                     }
                     "CREATE" => Ok(self.parse_create()?),
+                    "DROP" => Ok(self.parse_drop()?),
                     "DELETE" => Ok(self.parse_delete()?),
                     "INSERT" => Ok(self.parse_insert()?),
                     "ALTER" => Ok(self.parse_alter()?),
@@ -679,6 +680,28 @@ impl Parser {
         Ok(SQLStatement::SQLCreateView {
             name,
             query,
+            materialized,
+        })
+    }
+
+    pub fn parse_drop(&mut self) -> Result<SQLStatement, ParserError> {
+        if self.parse_keyword("MATERIALIZED") || self.parse_keyword("VIEW") {
+            self.prev_token();
+            self.parse_drop_view()
+        } else {
+            parser_err!(format!(
+                "Unexpected token after DROP: {:?}",
+                self.peek_token()
+            ))
+        }
+    }
+
+    pub fn parse_drop_view(&mut self) -> Result<SQLStatement, ParserError> {
+        let materialized = self.parse_keyword("MATERIALIZED");
+        self.expect_keyword("VIEW")?;
+        let name = self.parse_object_name()?;
+        Ok(SQLStatement::SQLDropView {
+            name,
             materialized,
         })
     }

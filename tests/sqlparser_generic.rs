@@ -964,6 +964,36 @@ fn parse_create_data_source() {
 }
 
 #[test]
+fn parse_drop_view() {
+    let sql = "DROP VIEW myschema.myview";
+    match verified_stmt(sql) {
+        SQLStatement::SQLDropView {
+            name,
+            materialized,
+        } => {
+            assert_eq!("myschema.myview", name.to_string());
+            assert!(!materialized);
+        }
+        _ => assert!(false),
+    }
+}
+
+#[test]
+fn parse_drop_materialized_view() {
+    let sql = "DROP MATERIALIZED VIEW myschema.myview";
+    match verified_stmt(sql) {
+        SQLStatement::SQLDropView {
+            name,
+            materialized,
+        } => {
+            assert_eq!("myschema.myview", name.to_string());
+            assert!(materialized);
+        }
+        _ => assert!(false),
+    }
+}
+
+#[test]
 fn parse_peek() {
     let sql = "PEEK foo.bar";
     match verified_stmt(sql) {

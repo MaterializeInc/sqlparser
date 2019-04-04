@@ -268,6 +268,12 @@ pub enum SQLStatement {
         name: SQLObjectName,
         operation: AlterOperation,
     },
+    /// DROP VIEW
+    SQLDropView {
+        /// View name
+        name: SQLObjectName,
+        materialized: bool,
+    },
     /// PEEK
     SQLPeek {
         name: SQLObjectName,
@@ -395,6 +401,17 @@ impl ToString for SQLStatement {
                     .collect::<Vec<String>>()
                     .join(", ")
             ),
+            SQLStatement::SQLDropView {
+                name,
+                materialized,
+            } => {
+                let modifier = if *materialized { " MATERIALIZED" } else { "" };
+                format!(
+                    "DROP{} VIEW {}",
+                    modifier,
+                    name.to_string(),
+                )
+            }
             SQLStatement::SQLAlterTable { name, operation } => {
                 format!("ALTER TABLE {} {}", name.to_string(), operation.to_string())
             },

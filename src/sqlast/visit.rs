@@ -281,6 +281,14 @@ pub trait Visit<'ast> {
         visit_column_default(self, default)
     }
 
+    fn visit_drop_view(
+        &mut self,
+        name: &'ast SQLObjectName,
+        materialized: bool,
+    ) {
+        visit_drop_view(self, name, materialized)
+    }
+
     fn visit_alter_table(&mut self, name: &'ast SQLObjectName, operation: &'ast AlterOperation) {
         visit_alter_table(self, name, operation)
     }
@@ -364,6 +372,10 @@ pub fn visit_statement<'ast, V: Visit<'ast> + ?Sized>(
             query,
             materialized,
         } => visitor.visit_create_view(name, query, *materialized),
+        SQLStatement::SQLDropView {
+            name,
+            materialized,
+        } => visitor.visit_drop_view(name, *materialized),
         SQLStatement::SQLCreateTable { name, columns } => visitor.visit_create_table(name, columns),
         SQLStatement::SQLAlterTable { name, operation } => {
             visitor.visit_alter_table(name, operation)
@@ -858,6 +870,14 @@ pub fn visit_create_view<'ast, V: Visit<'ast> + ?Sized>(
 ) {
     visitor.visit_object_name(name);
     visitor.visit_query(&query);
+}
+
+pub fn visit_drop_view<'ast, V: Visit<'ast> + ?Sized>(
+    visitor: &mut V,
+    name: &'ast SQLObjectName,
+    _materialized: bool,
+) {
+    visitor.visit_object_name(name);
 }
 
 pub fn visit_create_table<'ast, V: Visit<'ast> + ?Sized>(
