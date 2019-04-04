@@ -645,7 +645,7 @@ impl Parser {
             self.prev_token();
             self.parse_create_view()
         } else if self.parse_keyword("DATA") {
-            self.parse_data_source()
+            self.parse_create_data_source()
         } else {
             parser_err!(format!(
                 "Unexpected token after CREATE: {:?}",
@@ -654,7 +654,7 @@ impl Parser {
         }
     }
 
-    pub fn parse_data_source(&mut self) -> Result<SQLStatement, ParserError> {
+    pub fn parse_create_data_source(&mut self) -> Result<SQLStatement, ParserError> {
         self.expect_keyword("SOURCE")?;
         let name = self.parse_object_name()?;
         self.expect_keyword("FROM")?;
@@ -688,12 +688,20 @@ impl Parser {
         if self.parse_keyword("MATERIALIZED") || self.parse_keyword("VIEW") {
             self.prev_token();
             self.parse_drop_view()
+        } else if self.parse_keyword("DATA") {
+            self.parse_drop_data_source()
         } else {
             parser_err!(format!(
                 "Unexpected token after DROP: {:?}",
                 self.peek_token()
             ))
         }
+    }
+
+    pub fn parse_drop_data_source(&mut self) -> Result<SQLStatement, ParserError> {
+        self.expect_keyword("SOURCE")?;
+        let name = self.parse_object_name()?;
+        Ok(SQLStatement::SQLDropDataSource { name })
     }
 
     pub fn parse_drop_view(&mut self) -> Result<SQLStatement, ParserError> {

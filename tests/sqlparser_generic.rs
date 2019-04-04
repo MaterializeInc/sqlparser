@@ -964,6 +964,19 @@ fn parse_create_data_source() {
 }
 
 #[test]
+fn parse_drop_data_source() {
+    let sql = "DROP DATA SOURCE myschema.mydatasource";
+    match verified_stmt(sql) {
+        SQLStatement::SQLDropDataSource {
+            name,
+        } => {
+            assert_eq!("myschema.mydatasource", name.to_string());
+        }
+        _ => assert!(false),
+    }
+}
+
+#[test]
 fn parse_drop_view() {
     let sql = "DROP VIEW myschema.myview";
     match verified_stmt(sql) {

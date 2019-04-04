@@ -281,6 +281,13 @@ pub trait Visit<'ast> {
         visit_column_default(self, default)
     }
 
+    fn visit_drop_data_source(
+        &mut self,
+        name: &'ast SQLObjectName,
+    ) {
+        visit_drop_data_source(self, name)
+    }
+
     fn visit_drop_view(
         &mut self,
         name: &'ast SQLObjectName,
@@ -372,6 +379,9 @@ pub fn visit_statement<'ast, V: Visit<'ast> + ?Sized>(
             query,
             materialized,
         } => visitor.visit_create_view(name, query, *materialized),
+        SQLStatement::SQLDropDataSource {
+            name,
+        } => visitor.visit_drop_data_source(name),
         SQLStatement::SQLDropView {
             name,
             materialized,
@@ -860,6 +870,13 @@ pub fn visit_create_data_source<'ast, V: Visit<'ast> + ?Sized>(
     visitor.visit_object_name(name);
     visitor.visit_literal_string(url);
     visitor.visit_literal_string(schema);
+}
+
+pub fn visit_drop_data_source<'ast, V: Visit<'ast> + ?Sized>(
+    visitor: &mut V,
+    name: &'ast SQLObjectName,
+) {
+    visitor.visit_object_name(name);
 }
 
 pub fn visit_create_view<'ast, V: Visit<'ast> + ?Sized>(

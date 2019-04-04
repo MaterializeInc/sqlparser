@@ -268,6 +268,10 @@ pub enum SQLStatement {
         name: SQLObjectName,
         operation: AlterOperation,
     },
+    /// DROP DATA SOURCE
+    SQLDropDataSource {
+        name: SQLObjectName,
+    },
     /// DROP VIEW
     SQLDropView {
         /// View name
@@ -401,6 +405,14 @@ impl ToString for SQLStatement {
                     .collect::<Vec<String>>()
                     .join(", ")
             ),
+            SQLStatement::SQLDropDataSource {
+                name,
+            } => {
+                format!(
+                    "DROP DATA SOURCE {}",
+                    name.to_string(),
+                )
+            }
             SQLStatement::SQLDropView {
                 name,
                 materialized,
