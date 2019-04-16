@@ -99,6 +99,14 @@ fn parse_select_wildcard() {
 }
 
 #[test]
+fn parse_select_distinct() {
+    let sql = "SELECT DISTINCT * FROM foo";
+    let select = verified_only_select(sql);
+    assert_eq!(true, select.distinct);
+    assert_eq!(&SQLSelectItem::Wildcard, only(&select.projection));
+}
+
+#[test]
 fn parse_column_aliases() {
     let sql = "SELECT a.col + 1 AS newname FROM foo AS a";
     let select = verified_only_select(sql);
