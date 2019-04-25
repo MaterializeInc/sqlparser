@@ -268,6 +268,13 @@ pub enum SQLStatement {
         name: SQLObjectName,
         operation: AlterOperation,
     },
+    /// DROP TABLE
+    SQLDropTable {
+        if_exists: bool,
+        names: Vec<SQLObjectName>,
+        cascade: bool,
+        restrict: bool,
+    },
     /// DROP DATA SOURCE
     SQLDropDataSource {
         name: SQLObjectName,
@@ -284,7 +291,7 @@ pub enum SQLStatement {
     },
     SQLTail {
         name: SQLObjectName,
-    }
+    },
 }
 
 impl ToString for SQLStatement {
@@ -405,34 +412,35 @@ impl ToString for SQLStatement {
                     .collect::<Vec<String>>()
                     .join(", ")
             ),
-            SQLStatement::SQLDropDataSource {
-                name,
-            } => {
-                format!(
-                    "DROP DATA SOURCE {}",
-                    name.to_string(),
-                )
+            SQLStatement::SQLDropTable {
+                if_exists,
+                names,
+                cascade,
+                restrict,
+            } => format!(
+                "DROP TABLE{} {}{}{}",
+                if *if_exists { " IF EXISTS" } else { "" },
+                names
+                    .iter()
+                    .map(|name| name.to_string())
+                    .collect::<Vec<String>>()
+                    .join(", "),
+                if *cascade { " CASCADE" } else { "" },
+                if *restrict { " RESTRICT" } else { "" },
+            ),
+
+            SQLStatement::SQLDropDataSource { name } => {
+                format!("DROP DATA SOURCE {}", name.to_string(),)
             }
-            SQLStatement::SQLDropView {
-                name,
-                materialized,
-            } => {
+            SQLStatement::SQLDropView { name, materialized } => {
                 let modifier = if *materialized { " MATERIALIZED" } else { "" };
-                format!(
-                    "DROP{} VIEW {}",
-                    modifier,
-                    name.to_string(),
-                )
+                format!("DROP{} VIEW {}", modifier, name.to_string(),)
             }
             SQLStatement::SQLAlterTable { name, operation } => {
                 format!("ALTER TABLE {} {}", name.to_string(), operation.to_string())
-            },
-            SQLStatement::SQLPeek { name } => {
-                format!("PEEK {}", name.to_string())
-            },
-            SQLStatement::SQLTail { name } => {
-                format!("TAIL {}", name.to_string())
-            },
+            }
+            SQLStatement::SQLPeek { name } => format!("PEEK {}", name.to_string()),
+            SQLStatement::SQLTail { name } => format!("TAIL {}", name.to_string()),
         }
     }
 }

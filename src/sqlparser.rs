@@ -120,8 +120,12 @@ impl Parser {
                     "INSERT" => Ok(self.parse_insert()?),
                     "ALTER" => Ok(self.parse_alter()?),
                     "COPY" => Ok(self.parse_copy()?),
-                    "PEEK" => Ok(SQLStatement::SQLPeek { name: self.parse_object_name()? }),
-                    "TAIL" => Ok(SQLStatement::SQLTail { name: self.parse_object_name()? }),
+                    "PEEK" => Ok(SQLStatement::SQLPeek {
+                        name: self.parse_object_name()?,
+                    }),
+                    "TAIL" => Ok(SQLStatement::SQLTail {
+                        name: self.parse_object_name()?,
+                    }),
                     _ => parser_err!(format!(
                         "Unexpected keyword {:?} at the beginning of a statement",
                         w.to_string()
@@ -685,7 +689,9 @@ impl Parser {
     }
 
     pub fn parse_drop(&mut self) -> Result<SQLStatement, ParserError> {
-        if self.parse_keyword("MATERIALIZED") || self.parse_keyword("VIEW") {
+        if self.parse_keyword("TABLE") {
+            self.parse_drop_table()
+        } else if self.parse_keyword("MATERIALIZED") || self.parse_keyword("VIEW") {
             self.prev_token();
             self.parse_drop_view()
         } else if self.parse_keyword("DATA") {
@@ -698,6 +704,30 @@ impl Parser {
         }
     }
 
+    pub fn parse_drop_table(&mut self) -> Result<SQLStatement, ParserError> {
+        let if_exists = self.parse_keywords(vec!["IF", "EXISTS"]);
+        let mut names = vec![self.parse_object_name()?];
+        loop {
+            let token = &self.next_token();
+            if let Some(Token::Comma) = token {
+                names.push(self.parse_object_name()?)
+            } else {
+                if token.is_some() {
+                    self.prev_token();
+                }
+                break;
+            }
+        }
+        let cascade = self.parse_keyword("CASCADE");
+        let restrict = !cascade && self.parse_keyword("RESTRICT");
+        Ok(SQLStatement::SQLDropTable {
+            if_exists,
+            names,
+            cascade,
+            restrict,
+        })
+    }
+
     pub fn parse_drop_data_source(&mut self) -> Result<SQLStatement, ParserError> {
         self.expect_keyword("SOURCE")?;
         let name = self.parse_object_name()?;
@@ -708,10 +738,7 @@ impl Parser {
         let materialized = self.parse_keyword("MATERIALIZED");
         self.expect_keyword("VIEW")?;
         let name = self.parse_object_name()?;
-        Ok(SQLStatement::SQLDropView {
-            name,
-            materialized,
-        })
+        Ok(SQLStatement::SQLDropView { name, materialized })
     }
 
     pub fn parse_create_table(&mut self) -> Result<SQLStatement, ParserError> {

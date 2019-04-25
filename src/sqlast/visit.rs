@@ -281,18 +281,21 @@ pub trait Visit<'ast> {
         visit_column_default(self, default)
     }
 
-    fn visit_drop_data_source(
+    fn visit_drop_table(
         &mut self,
-        name: &'ast SQLObjectName,
+        if_exists: bool,
+        names: &'ast Vec<SQLObjectName>,
+        cascade: bool,
+        restrict: bool,
     ) {
+        visit_drop_table(self, if_exists, names, cascade, restrict)
+    }
+
+    fn visit_drop_data_source(&mut self, name: &'ast SQLObjectName) {
         visit_drop_data_source(self, name)
     }
 
-    fn visit_drop_view(
-        &mut self,
-        name: &'ast SQLObjectName,
-        materialized: bool,
-    ) {
+    fn visit_drop_view(&mut self, name: &'ast SQLObjectName, materialized: bool) {
         visit_drop_view(self, name, materialized)
     }
 
@@ -379,20 +382,23 @@ pub fn visit_statement<'ast, V: Visit<'ast> + ?Sized>(
             query,
             materialized,
         } => visitor.visit_create_view(name, query, *materialized),
-        SQLStatement::SQLDropDataSource {
-            name,
-        } => visitor.visit_drop_data_source(name),
-        SQLStatement::SQLDropView {
-            name,
-            materialized,
-        } => visitor.visit_drop_view(name, *materialized),
+        SQLStatement::SQLDropTable {
+            if_exists,
+            names,
+            cascade,
+            restrict,
+        } => visitor.visit_drop_table(*if_exists, &names, *cascade, *restrict),
+        SQLStatement::SQLDropDataSource { name } => visitor.visit_drop_data_source(name),
+        SQLStatement::SQLDropView { name, materialized } => {
+            visitor.visit_drop_view(name, *materialized)
+        }
         SQLStatement::SQLCreateTable { name, columns } => visitor.visit_create_table(name, columns),
         SQLStatement::SQLAlterTable { name, operation } => {
             visitor.visit_alter_table(name, operation)
-        },
+        }
         SQLStatement::SQLPeek { name } => {
             visitor.visit_peek(name);
-        },
+        }
         SQLStatement::SQLTail { name } => {
             visitor.visit_tail(name);
         }
@@ -872,6 +878,18 @@ pub fn visit_create_data_source<'ast, V: Visit<'ast> + ?Sized>(
     visitor.visit_literal_string(schema);
 }
 
+pub fn visit_drop_table<'ast, V: Visit<'ast> + ?Sized>(
+    visitor: &mut V,
+    _if_exists: bool,
+    names: &'ast Vec<SQLObjectName>,
+    _cascade: bool,
+    _restrict: bool,
+) {
+    for name in names {
+        visitor.visit_object_name(name);
+    }
+}
+
 pub fn visit_drop_data_source<'ast, V: Visit<'ast> + ?Sized>(
     visitor: &mut V,
     name: &'ast SQLObjectName,
@@ -1001,17 +1019,11 @@ pub fn visit_alter_remove_constraint<'ast, V: Visit<'ast> + ?Sized>(
     visitor.visit_identifier(name);
 }
 
-pub fn visit_peek<'ast, V: Visit<'ast> + ?Sized>(
-    visitor: &mut V,
-    name: &'ast SQLObjectName,
-) {
+pub fn visit_peek<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, name: &'ast SQLObjectName) {
     visitor.visit_object_name(name);
 }
 
-pub fn visit_tail<'ast, V: Visit<'ast> + ?Sized>(
-    visitor: &mut V,
-    name: &'ast SQLObjectName,
-) {
+pub fn visit_tail<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, name: &'ast SQLObjectName) {
     visitor.visit_object_name(name);
 }
 
