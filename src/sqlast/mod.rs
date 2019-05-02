@@ -246,7 +246,7 @@ pub enum SQLStatement {
     SQLCreateDataSource {
         name: SQLObjectName,
         url: String,
-        schema: String,
+        schema: DataSourceSchema,
     },
     /// CREATE VIEW
     SQLCreateView {
@@ -388,8 +388,14 @@ impl ToString for SQLStatement {
                 "CREATE DATA SOURCE {} FROM {} USING SCHEMA {}",
                 name.to_string(),
                 Value::SingleQuotedString(url.clone()).to_string(),
-                Value::SingleQuotedString(schema.clone()).to_string()
-            ),
+                match schema {
+                    DataSourceSchema::Raw(schema) => {
+                        Value::SingleQuotedString(schema.clone()).to_string()
+                    }
+                    DataSourceSchema::Registry(url) => {
+                        format!("REGISTRY {}", Value::SingleQuotedString(url.clone()).to_string())
+                    }
+                }),
             SQLStatement::SQLCreateView {
                 name,
                 query,
@@ -496,4 +502,14 @@ impl ToString for SQLColumnDef {
         }
         s
     }
+}
+
+/// Specifies the schema associated with a given Kafka topic.
+#[derive(Debug, Clone, PartialEq)]
+pub enum DataSourceSchema {
+    /// The schema is specified directly in the contained string.
+    Raw(String),
+    /// The schema is available in a Confluent-compatible schema registry that
+    /// is accessible at the specified URL.
+    Registry(String),
 }

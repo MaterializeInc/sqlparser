@@ -253,9 +253,16 @@ pub trait Visit<'ast> {
         &mut self,
         name: &'ast SQLObjectName,
         url: &'ast String,
-        schema: &'ast String,
+        schema: &'ast DataSourceSchema,
     ) {
         visit_create_data_source(self, name, url, schema)
+    }
+
+    fn visit_data_source_schema(
+        &mut self,
+        data_source_schema: &'ast DataSourceSchema
+    ) {
+        visit_data_source_schema(self, data_source_schema)
     }
 
     fn visit_literal_string(&mut self, _string: &'ast String) {}
@@ -871,11 +878,21 @@ pub fn visit_create_data_source<'ast, V: Visit<'ast> + ?Sized>(
     visitor: &mut V,
     name: &'ast SQLObjectName,
     url: &'ast String,
-    schema: &'ast String,
+    schema: &'ast DataSourceSchema,
 ) {
     visitor.visit_object_name(name);
     visitor.visit_literal_string(url);
-    visitor.visit_literal_string(schema);
+    visitor.visit_data_source_schema(schema);
+}
+
+fn visit_data_source_schema<'ast, V: Visit<'ast> + ?Sized>(
+    visitor: &mut V,
+    data_source_schema: &'ast DataSourceSchema
+) {
+    match data_source_schema {
+        DataSourceSchema::Raw(schema) => visitor.visit_literal_string(schema),
+        DataSourceSchema::Registry(url) => visitor.visit_literal_string(url),
+    }
 }
 
 pub fn visit_drop_table<'ast, V: Visit<'ast> + ?Sized>(

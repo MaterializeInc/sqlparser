@@ -959,13 +959,26 @@ fn parse_create_materialized_view() {
 }
 
 #[test]
-fn parse_create_data_source() {
+fn parse_create_data_source_raw_schema() {
     let sql = "CREATE DATA SOURCE foo FROM 'bar' USING SCHEMA 'baz'";
     match verified_stmt(sql) {
         SQLStatement::SQLCreateDataSource { name, url, schema } => {
             assert_eq!("foo", name.to_string());
             assert_eq!("bar", url);
-            assert_eq!("baz", schema);
+            assert_eq!(DataSourceSchema::Raw("baz".into()), schema);
+        }
+        _ => assert!(false),
+    }
+}
+
+#[test]
+fn parse_create_data_source_registry() {
+    let sql = "CREATE DATA SOURCE foo FROM 'bar' USING SCHEMA REGISTRY 'http://localhost:8081'";
+    match verified_stmt(sql) {
+        SQLStatement::SQLCreateDataSource { name, url, schema } => {
+            assert_eq!("foo", name.to_string());
+            assert_eq!("bar", url);
+            assert_eq!(DataSourceSchema::Registry("http://localhost:8081".into()), schema);
         }
         _ => assert!(false),
     }

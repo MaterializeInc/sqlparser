@@ -665,7 +665,11 @@ impl Parser {
         let url = self.parse_literal_string()?;
         self.expect_keyword("USING")?;
         self.expect_keyword("SCHEMA")?;
-        let schema = self.parse_literal_string()?;
+        let schema = if self.parse_keyword("REGISTRY") {
+            DataSourceSchema::Registry(self.parse_literal_string()?)
+        } else {
+            DataSourceSchema::Raw(self.parse_literal_string()?)
+        };
         Ok(SQLStatement::SQLCreateDataSource { name, url, schema })
     }
 
