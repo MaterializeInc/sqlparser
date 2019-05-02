@@ -42,8 +42,10 @@ pub trait Visit<'ast> {
         &mut self,
         name: &'ast SQLObjectName,
         alias: Option<&'ast SQLIdent>,
+        args: Option<&'ast Vec<ASTNode>>,
+        with_hints: &'ast Vec<ASTNode>,
     ) {
-        visit_table_table_factor(self, name, alias)
+        visit_table_table_factor(self, name, alias, args, with_hints)
     }
 
     fn visit_derived_table_factor(
@@ -183,17 +185,35 @@ pub trait Visit<'ast> {
 
     fn visit_value(&mut self, _val: &'ast Value) {}
 
-    fn visit_function(&mut self, ident: &'ast SQLIdent, args: &'ast Vec<ASTNode>) {
-        visit_function(self, ident, args)
+    fn visit_function(
+        &mut self,
+        name: &'ast SQLObjectName,
+        args: &'ast Vec<ASTNode>,
+        over: Option<&'ast SQLWindowSpec>,
+    ) {
+        visit_function(self, name, args, over)
     }
+
+    fn visit_window_spec(&mut self, window_spec: &'ast SQLWindowSpec) {
+        visit_window_spec(self, window_spec)
+    }
+
+    fn visit_window_frame(&mut self, window_frame: &'ast SQLWindowFrame) {
+        visit_window_frame(self, window_frame)
+    }
+
+    fn visit_window_frame_units(&mut self, _window_frame_units: &'ast SQLWindowFrameUnits) {}
+
+    fn visit_window_frame_bound(&mut self, _window_frame_bound: &'ast SQLWindowFrameBound) {}
 
     fn visit_case(
         &mut self,
+        operand: Option<&'ast ASTNode>,
         conditions: &'ast Vec<ASTNode>,
         results: &'ast Vec<ASTNode>,
         else_result: Option<&'ast ASTNode>,
     ) {
-        visit_case(self, conditions, results, else_result)
+        visit_case(self, operand, conditions, results, else_result)
     }
 
     fn visit_subquery(&mut self, subquery: &'ast SQLQuery) {
@@ -258,10 +278,7 @@ pub trait Visit<'ast> {
         visit_create_data_source(self, name, url, schema)
     }
 
-    fn visit_data_source_schema(
-        &mut self,
-        data_source_schema: &'ast DataSourceSchema
-    ) {
+    fn visit_data_source_schema(&mut self, data_source_schema: &'ast DataSourceSchema) {
         visit_data_source_schema(self, data_source_schema)
     }
 
@@ -276,8 +293,15 @@ pub trait Visit<'ast> {
         visit_create_view(self, name, query, materialized)
     }
 
-    fn visit_create_table(&mut self, name: &'ast SQLObjectName, columns: &'ast Vec<SQLColumnDef>) {
-        visit_create_table(self, name, columns)
+    fn visit_create_table(
+        &mut self,
+        name: &'ast SQLObjectName,
+        columns: &'ast Vec<SQLColumnDef>,
+        external: bool,
+        file_format: &'ast Option<FileFormat>,
+        location: &'ast Option<String>,
+    ) {
+        visit_create_table(self, name, columns, external, file_format, location)
     }
 
     fn visit_column_def(&mut self, column_def: &'ast SQLColumnDef) {
@@ -287,6 +311,8 @@ pub trait Visit<'ast> {
     fn visit_column_default(&mut self, default: Option<&'ast ASTNode>) {
         visit_column_default(self, default)
     }
+
+    fn visit_file_format(&mut self, _file_format: &'ast FileFormat) {}
 
     fn visit_drop_table(
         &mut self,
@@ -361,7 +387,7 @@ pub fn visit_statement<'ast, V: Visit<'ast> + ?Sized>(
     statement: &'ast SQLStatement,
 ) {
     match statement {
-        SQLStatement::SQLSelect(query) => visitor.visit_query(query),
+        SQLStatement::SQLQuery(query) => visitor.visit_query(query),
         SQLStatement::SQLInsert {
             table_name,
             columns,
@@ -399,7 +425,13 @@ pub fn visit_statement<'ast, V: Visit<'ast> + ?Sized>(
         SQLStatement::SQLDropView { name, materialized } => {
             visitor.visit_drop_view(name, *materialized)
         }
-        SQLStatement::SQLCreateTable { name, columns } => visitor.visit_create_table(name, columns),
+        SQLStatement::SQLCreateTable {
+            name,
+            columns,
+            external,
+            file_format,
+            location,
+        } => visitor.visit_create_table(name, columns, *external, file_format, location),
         SQLStatement::SQLAlterTable { name, operation } => {
             visitor.visit_alter_table(name, operation)
         }
@@ -466,7 +498,7 @@ pub fn visit_select_item<'ast, V: Visit<'ast> + ?Sized>(
 ) {
     match select_item {
         SQLSelectItem::UnnamedExpression(expr) => visitor.visit_unnamed_expression(expr),
-        SQLSelectItem::ExpressionWithAlias(expr, alias) => {
+        SQLSelectItem::ExpressionWithAlias { expr, alias } => {
             visitor.visit_expression_with_alias(expr, alias)
         }
         SQLSelectItem::QualifiedWildcard(object_name) => {
@@ -481,9 +513,12 @@ pub fn visit_table_factor<'ast, V: Visit<'ast> + ?Sized>(
     table_factor: &'ast TableFactor,
 ) {
     match table_factor {
-        TableFactor::Table { name, alias } => {
-            visitor.visit_table_table_factor(name, alias.as_ref())
-        }
+        TableFactor::Table {
+            name,
+            alias,
+            args,
+            with_hints,
+        } => visitor.visit_table_table_factor(name, alias.as_ref(), args.as_ref(), with_hints),
         TableFactor::Derived { subquery, alias } => {
             visitor.visit_derived_table_factor(subquery, alias.as_ref())
         }
@@ -494,11 +529,20 @@ pub fn visit_table_table_factor<'ast, V: Visit<'ast> + ?Sized>(
     visitor: &mut V,
     name: &'ast SQLObjectName,
     alias: Option<&'ast SQLIdent>,
+    args: Option<&'ast Vec<ASTNode>>,
+    with_hints: &'ast Vec<ASTNode>,
 ) {
     visitor.visit_object_name(name);
-    match alias {
-        Some(ident) => visitor.visit_identifier(ident),
-        None => (),
+    if let Some(ident) = alias {
+        visitor.visit_identifier(ident);
+    }
+    if let Some(args) = args {
+        for expr in args {
+            visitor.visit_expr(expr);
+        }
+    }
+    for expr in with_hints {
+        visitor.visit_expr(expr);
     }
 }
 
@@ -623,12 +667,16 @@ pub fn visit_expr<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, expr: &'ast AS
         ASTNode::SQLNested(expr) => visitor.visit_nested(expr),
         ASTNode::SQLUnary { expr, operator } => visitor.visit_unary(expr, operator),
         ASTNode::SQLValue(val) => visitor.visit_value(val),
-        ASTNode::SQLFunction { id, args } => visitor.visit_function(id, args),
+        ASTNode::SQLFunction { name, args, over } => {
+            visitor.visit_function(name, args, over.as_ref())
+        }
         ASTNode::SQLCase {
+            operand,
             conditions,
             results,
             else_result,
         } => visitor.visit_case(
+            operand.as_ref().map(|o| o.as_ref()),
             conditions,
             results,
             else_result.as_ref().map(|r| r.as_ref()),
@@ -757,21 +805,55 @@ pub fn visit_unary<'ast, V: Visit<'ast> + ?Sized>(
 
 pub fn visit_function<'ast, V: Visit<'ast> + ?Sized>(
     visitor: &mut V,
-    ident: &'ast SQLIdent,
+    name: &'ast SQLObjectName,
     args: &'ast Vec<ASTNode>,
+    over: Option<&'ast SQLWindowSpec>,
 ) {
-    visitor.visit_identifier(ident);
+    visitor.visit_object_name(name);
     for arg in args {
         visitor.visit_expr(arg);
+    }
+    if let Some(over) = over {
+        visitor.visit_window_spec(over);
+    }
+}
+
+pub fn visit_window_spec<'ast, V: Visit<'ast> + ?Sized>(
+    visitor: &mut V,
+    window_spec: &'ast SQLWindowSpec,
+) {
+    for expr in &window_spec.partition_by {
+        visitor.visit_expr(expr);
+    }
+    for order_by in &window_spec.order_by {
+        visitor.visit_order_by(order_by);
+    }
+    if let Some(window_frame) = &window_spec.window_frame {
+        visitor.visit_window_frame(window_frame);
+    }
+}
+
+pub fn visit_window_frame<'ast, V: Visit<'ast> + ?Sized>(
+    visitor: &mut V,
+    window_frame: &'ast SQLWindowFrame,
+) {
+    visitor.visit_window_frame_units(&window_frame.units);
+    visitor.visit_window_frame_bound(&window_frame.start_bound);
+    if let Some(end_bound) = &window_frame.end_bound {
+        visitor.visit_window_frame_bound(end_bound);
     }
 }
 
 pub fn visit_case<'ast, V: Visit<'ast> + ?Sized>(
     visitor: &mut V,
+    operand: Option<&'ast ASTNode>,
     conditions: &'ast Vec<ASTNode>,
     results: &'ast Vec<ASTNode>,
     else_result: Option<&'ast ASTNode>,
 ) {
+    if let Some(operand) = operand {
+        visitor.visit_expr(operand);
+    }
     for cond in conditions {
         visitor.visit_expr(cond);
     }
@@ -887,7 +969,7 @@ pub fn visit_create_data_source<'ast, V: Visit<'ast> + ?Sized>(
 
 fn visit_data_source_schema<'ast, V: Visit<'ast> + ?Sized>(
     visitor: &mut V,
-    data_source_schema: &'ast DataSourceSchema
+    data_source_schema: &'ast DataSourceSchema,
 ) {
     match data_source_schema {
         DataSourceSchema::Raw(schema) => visitor.visit_literal_string(schema),
@@ -936,10 +1018,19 @@ pub fn visit_create_table<'ast, V: Visit<'ast> + ?Sized>(
     visitor: &mut V,
     name: &'ast SQLObjectName,
     columns: &'ast Vec<SQLColumnDef>,
+    _external: bool,
+    file_format: &'ast Option<FileFormat>,
+    location: &'ast Option<String>,
 ) {
     visitor.visit_object_name(name);
     for column in columns {
         visitor.visit_column_def(column);
+    }
+    if let Some(file_format) = file_format {
+        visitor.visit_file_format(file_format);
+    }
+    if let Some(location) = location {
+        visitor.visit_literal_string(location);
     }
 }
 

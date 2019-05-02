@@ -143,9 +143,9 @@ impl Token {
         let is_keyword = quote_style == None && ALL_KEYWORDS.contains(&word_uppercase.as_str());
         Token::SQLWord(SQLWord {
             value: word.to_string(),
-            quote_style: quote_style,
+            quote_style,
             keyword: if is_keyword {
-                word_uppercase.to_string()
+                word_uppercase
             } else {
                 "".to_string()
             },
@@ -217,7 +217,7 @@ pub struct TokenizerError(String);
 
 /// SQL Tokenizer
 pub struct Tokenizer<'a> {
-    dialect: &'a Dialect,
+    dialect: &'a dyn Dialect,
     pub query: String,
     pub line: u64,
     pub col: u64,
@@ -225,7 +225,7 @@ pub struct Tokenizer<'a> {
 
 impl<'a> Tokenizer<'a> {
     /// Create a new SQL tokenizer for the specified SQL statement
-    pub fn new(dialect: &'a Dialect, query: &str) -> Self {
+    pub fn new(dialect: &'a dyn Dialect, query: &str) -> Self {
         Self {
             dialect,
             query: query.to_string(),
@@ -261,20 +261,19 @@ impl<'a> Tokenizer<'a> {
     }
 
     /// Get the next token or return None
-    fn next_token(&self, chars: &mut Peekable<Chars>) -> Result<Option<Token>, TokenizerError> {
+    fn next_token(&self, chars: &mut Peekable<Chars<'_>>) -> Result<Option<Token>, TokenizerError> {
         //println!("next_token: {:?}", chars.peek());
         match chars.peek() {
             Some(&ch) => match ch {
-                ' ' => {
+                ' ' => self.consume_and_return(chars, Token::Whitespace(Whitespace::Space)),
+                '\t' => self.consume_and_return(chars, Token::Whitespace(Whitespace::Tab)),
+                '\n' => self.consume_and_return(chars, Token::Whitespace(Whitespace::Newline)),
+                '\r' => {
+                    // Emit a single Whitespace::Newline token for \r and \r\n
                     chars.next();
-                    Ok(Some(Token::Whitespace(Whitespace::Space)))
-                }
-                '\t' => {
-                    chars.next();
-                    Ok(Some(Token::Whitespace(Whitespace::Tab)))
-                }
-                '\n' => {
-                    chars.next();
+                    if let Some('\n') = chars.peek() {
+                        chars.next();
+                    }
                     Ok(Some(Token::Whitespace(Whitespace::Newline)))
                 }
                 'N' => {
@@ -317,11 +316,11 @@ impl<'a> Tokenizer<'a> {
                     Ok(Some(Token::make_word(&s, Some(quote_start))))
                 }
                 // numbers
-                '0'...'9' => {
+                '0'..='9' => {
                     let mut s = String::new();
                     while let Some(&ch) = chars.peek() {
                         match ch {
-                            '0'...'9' | '.' => {
+                            '0'..='9' | '.' => {
                                 chars.next(); // consume
                                 s.push(ch);
                             }
@@ -441,7 +440,7 @@ impl<'a> Tokenizer<'a> {
     }
 
     /// Tokenize an identifier or keyword, after the first char is already consumed.
-    fn tokenize_word(&self, first_char: char, chars: &mut Peekable<Chars>) -> String {
+    fn tokenize_word(&self, first_char: char, chars: &mut Peekable<Chars<'_>>) -> String {
         let mut s = String::new();
         s.push(first_char);
         while let Some(&ch) = chars.peek() {
@@ -456,7 +455,7 @@ impl<'a> Tokenizer<'a> {
     }
 
     /// Read a single quoted string, starting with the opening quote.
-    fn tokenize_single_quoted_string(&self, chars: &mut Peekable<Chars>) -> String {
+    fn tokenize_single_quoted_string(&self, chars: &mut Peekable<Chars<'_>>) -> String {
         //TODO: handle escaped quotes in string
         //TODO: handle newlines in string
         //TODO: handle EOF before terminating quote
@@ -467,7 +466,13 @@ impl<'a> Tokenizer<'a> {
             match ch {
                 '\'' => {
                     chars.next(); // consume
-                    break;
+                    let escaped_quote = chars.peek().map(|c| *c == '\'').unwrap_or(false);
+                    if escaped_quote {
+                        s.push('\'');
+                        chars.next();
+                    } else {
+                        break;
+                    }
                 }
                 _ => {
                     chars.next(); // consume
@@ -480,7 +485,7 @@ impl<'a> Tokenizer<'a> {
 
     fn tokenize_multiline_comment(
         &self,
-        chars: &mut Peekable<Chars>,
+        chars: &mut Peekable<Chars<'_>>,
     ) -> Result<Option<Token>, TokenizerError> {
         let mut s = String::new();
         let mut maybe_closing_comment = false;
@@ -511,7 +516,7 @@ impl<'a> Tokenizer<'a> {
 
     fn consume_and_return(
         &self,
-        chars: &mut Peekable<Chars>,
+        chars: &mut Peekable<Chars<'_>>,
         t: Token,
     ) -> Result<Option<Token>, TokenizerError> {
         chars.next();
@@ -743,6 +748,26 @@ mod tests {
         let expected = vec![
             Token::Whitespace(Whitespace::Newline),
             Token::Whitespace(Whitespace::MultiLineComment("* Comment *".to_string())),
+            Token::Whitespace(Whitespace::Newline),
+        ];
+        compare(expected, tokens);
+    }
+
+    #[test]
+    fn tokenize_newlines() {
+        let sql = String::from("line1\nline2\rline3\r\nline4\r");
+
+        let dialect = GenericSqlDialect {};
+        let mut tokenizer = Tokenizer::new(&dialect, &sql);
+        let tokens = tokenizer.tokenize().unwrap();
+        let expected = vec![
+            Token::make_word("line1", None),
+            Token::Whitespace(Whitespace::Newline),
+            Token::make_word("line2", None),
+            Token::Whitespace(Whitespace::Newline),
+            Token::make_word("line3", None),
+            Token::Whitespace(Whitespace::Newline),
+            Token::make_word("line4", None),
             Token::Whitespace(Whitespace::Newline),
         ];
         compare(expected, tokens);

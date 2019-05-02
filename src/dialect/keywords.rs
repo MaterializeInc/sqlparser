@@ -160,6 +160,7 @@ keyword!(
     FIRST_VALUE,
     FLOAT,
     FLOOR,
+    FOLLOWING,
     FOR,
     FOREIGN,
     FRAME_ROW,
@@ -269,6 +270,7 @@ keyword!(
     POSITION_REGEX,
     POWER,
     PRECEDES,
+    PRECEDING,
     PRECISION,
     PREPARE,
     PRIMARY,
@@ -361,6 +363,7 @@ keyword!(
     TRIM_ARRAY,
     TRUE,
     UESCAPE,
+    UNBOUNDED,
     UNION,
     UNIQUE,
     UNKNOWN,
@@ -393,9 +396,9 @@ keyword!(
 );
 
 /// special case of keyword where the it is an invalid identifier
-pub const END_EXEC: &'static str = "END-EXEC";
+pub const END_EXEC: &str = "END-EXEC";
 
-pub const ALL_KEYWORDS: &'static [&'static str] = &[
+pub const ALL_KEYWORDS: &[&str] = &[
     ABS,
     ADD,
     ASC,
@@ -518,6 +521,7 @@ pub const ALL_KEYWORDS: &'static [&'static str] = &[
     FIRST_VALUE,
     FLOAT,
     FLOOR,
+    FOLLOWING,
     FOR,
     FOREIGN,
     FRAME_ROW,
@@ -627,6 +631,7 @@ pub const ALL_KEYWORDS: &'static [&'static str] = &[
     POSITION_REGEX,
     POWER,
     PRECEDES,
+    PRECEDING,
     PRECISION,
     PREPARE,
     PRIMARY,
@@ -719,6 +724,7 @@ pub const ALL_KEYWORDS: &'static [&'static str] = &[
     TRIM_ARRAY,
     TRUE,
     UESCAPE,
+    UNBOUNDED,
     UNION,
     UNIQUE,
     UNKNOWN,
@@ -753,7 +759,7 @@ pub const ALL_KEYWORDS: &'static [&'static str] = &[
 
 /// These keywords can't be used as a table alias, so that `FROM table_name alias`
 /// can be parsed unambiguously without looking ahead.
-pub const RESERVED_FOR_TABLE_ALIAS: &'static [&'static str] = &[
+pub const RESERVED_FOR_TABLE_ALIAS: &[&str] = &[
     // Reserved as both a table and a column alias:
     WITH, SELECT, WHERE, GROUP, ORDER, UNION, EXCEPT, INTERSECT,
     // Reserved only as a table alias in the `FROM`/`JOIN` clauses:
@@ -762,7 +768,7 @@ pub const RESERVED_FOR_TABLE_ALIAS: &'static [&'static str] = &[
 
 /// Can't be used as a column alias, so that `SELECT <expr> alias`
 /// can be parsed unambiguously without looking ahead.
-pub const RESERVED_FOR_COLUMN_ALIAS: &'static [&'static str] = &[
+pub const RESERVED_FOR_COLUMN_ALIAS: &[&str] = &[
     // Reserved as both a table and a column alias:
     WITH, SELECT, WHERE, GROUP, ORDER, UNION, EXCEPT, INTERSECT,
     // Reserved only as a column alias in the `SELECT` clause:

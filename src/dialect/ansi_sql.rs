@@ -17,7 +17,7 @@
 // information. The derived work is copyright 2019 Timely Data and
 // is not licensed under the terms of the above license.
 
-use dialect::Dialect;
+use crate::dialect::Dialect;
 
 pub struct AnsiSqlDialect {}
 

@@ -48,14 +48,7 @@ impl ToString for SQLQuery {
         }
         s += &self.body.to_string();
         if let Some(ref order_by) = self.order_by {
-            s += &format!(
-                " ORDER BY {}",
-                order_by
-                    .iter()
-                    .map(|o| o.to_string())
-                    .collect::<Vec<String>>()
-                    .join(", ")
-            );
+            s += &format!(" ORDER BY {}", comma_separated_string(order_by));
         }
         if let Some(ref limit) = self.limit {
             s += &format!(" LIMIT {}", limit.to_string());
@@ -69,7 +62,7 @@ impl ToString for SQLQuery {
 #[derive(Debug, Clone, PartialEq)]
 pub enum SQLSetExpr {
     /// Restricted SELECT .. FROM .. HAVING (no ORDER BY or set operations)
-    Select(SQLSelect),
+    Select(Box<SQLSelect>),
     /// Parenthesized SELECT subquery, which may include more set operations
     /// in its body and an optional ORDER BY / LIMIT.
     Query(Box<SQLQuery>),
@@ -129,7 +122,6 @@ impl ToString for SQLSetOperator {
 /// to a set operation like `UNION`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SQLSelect {
-    /// DISTINCT
     pub distinct: bool,
     /// projection expressions
     pub projection: Vec<SQLSelectItem>,
@@ -147,17 +139,10 @@ pub struct SQLSelect {
 
 impl ToString for SQLSelect {
     fn to_string(&self) -> String {
-        let mut s = "SELECT".to_owned();
-        if self.distinct {
-            s += " DISTINCT";
-        }
-        s += &format!(
-            " {}",
-            self.projection
-                .iter()
-                .map(|p| p.to_string())
-                .collect::<Vec<String>>()
-                .join(", ")
+        let mut s = format!(
+            "SELECT{} {}",
+            if self.distinct { " DISTINCT" } else { "" },
+            comma_separated_string(&self.projection)
         );
         if let Some(ref relation) = self.relation {
             s += &format!(" FROM {}", relation.to_string());
@@ -169,14 +154,7 @@ impl ToString for SQLSelect {
             s += &format!(" WHERE {}", selection.to_string());
         }
         if !self.group_by.is_empty() {
-            s += &format!(
-                " GROUP BY {}",
-                self.group_by
-                    .iter()
-                    .map(|g| g.to_string())
-                    .collect::<Vec<String>>()
-                    .join(", ")
-            );
+            s += &format!(" GROUP BY {}", comma_separated_string(&self.group_by));
         }
         if let Some(ref having) = self.having {
             s += &format!(" HAVING {}", having.to_string());
@@ -198,7 +176,7 @@ pub enum SQLSelectItem {
     /// Any expression, not followed by `[ AS ] alias`
     UnnamedExpression(ASTNode),
     /// An expression, followed by `[ AS ] alias`
-    ExpressionWithAlias(ASTNode, SQLIdent),
+    ExpressionWithAlias { expr: ASTNode, alias: SQLIdent },
     /// `alias.*` or even `schema.table.*`
     QualifiedWildcard(SQLObjectName),
     /// An unqualified `*`
@@ -209,7 +187,7 @@ impl ToString for SQLSelectItem {
     fn to_string(&self) -> String {
         match &self {
             SQLSelectItem::UnnamedExpression(expr) => expr.to_string(),
-            SQLSelectItem::ExpressionWithAlias(expr, alias) => {
+            SQLSelectItem::ExpressionWithAlias { expr, alias } => {
                 format!("{} AS {}", expr.to_string(), alias)
             }
             SQLSelectItem::QualifiedWildcard(prefix) => format!("{}.*", prefix.to_string()),
@@ -224,6 +202,12 @@ pub enum TableFactor {
     Table {
         name: SQLObjectName,
         alias: Option<SQLIdent>,
+        /// Arguments of a table-valued function, as supported by Postgres
+        /// and MSSQL. Note that deprecated MSSQL `FROM foo (NOLOCK)` syntax
+        /// will also be parsed as `args`.
+        args: Option<Vec<ASTNode>>,
+        /// MSSQL-specific `WITH (...)` hints such as NOLOCK.
+        with_hints: Vec<ASTNode>,
     },
     Derived {
         subquery: Box<SQLQuery>,
@@ -233,16 +217,32 @@ pub enum TableFactor {
 
 impl ToString for TableFactor {
     fn to_string(&self) -> String {
-        let (base, alias) = match self {
-            TableFactor::Table { name, alias } => (name.to_string(), alias),
-            TableFactor::Derived { subquery, alias } => {
-                (format!("({})", subquery.to_string()), alias)
+        match self {
+            TableFactor::Table {
+                name,
+                alias,
+                args,
+                with_hints,
+            } => {
+                let mut s = name.to_string();
+                if let Some(args) = args {
+                    s += &format!("({})", comma_separated_string(args))
+                };
+                if let Some(alias) = alias {
+                    s += &format!(" AS {}", alias);
+                }
+                if !with_hints.is_empty() {
+                    s += &format!(" WITH ({})", comma_separated_string(with_hints));
+                }
+                s
             }
-        };
-        if let Some(alias) = alias {
-            format!("{} AS {}", base, alias)
-        } else {
-            base
+            TableFactor::Derived { subquery, alias } => {
+                let mut s = format!("({})", subquery.to_string());
+                if let Some(alias) = alias {
+                    s += &format!(" AS {}", alias);
+                }
+                s
+            }
         }
     }
 }

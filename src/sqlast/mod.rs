@@ -36,6 +36,14 @@ pub use self::value::Value;
 
 pub use self::sql_operator::SQLOperator;
 
+/// Like `vec.join(", ")`, but for any types implementing ToString.
+fn comma_separated_string<T: ToString>(vec: &[T]) -> String {
+    vec.iter()
+        .map(T::to_string)
+        .collect::<Vec<String>>()
+        .join(", ")
+}
+
 /// Identifier name, in the originally quoted form (e.g. `"id"`)
 pub type SQLIdent = String;
 
@@ -52,7 +60,7 @@ pub enum ASTNode {
     /// Qualified wildcard, e.g. `alias.*` or `schema.table.*`.
     /// (Same caveats apply to SQLQualifiedWildcard as to SQLWildcard.)
     SQLQualifiedWildcard(Vec<SQLIdent>),
-    /// Multi part identifier e.g. `myschema.dbo.mytable`
+    /// Multi-part identifier, e.g. `table_alias.column` or `schema.table.col`
     SQLCompoundIdentifier(Vec<SQLIdent>),
     /// `IS NULL` expression
     SQLIsNull(Box<ASTNode>),
@@ -98,11 +106,17 @@ pub enum ASTNode {
     /// SQLValue
     SQLValue(Value),
     /// Scalar function call e.g. `LEFT(foo, 5)`
-    /// TODO: this can be a compound SQLObjectName as well (for UDFs)
-    SQLFunction { id: SQLIdent, args: Vec<ASTNode> },
+    SQLFunction {
+        name: SQLObjectName,
+        args: Vec<ASTNode>,
+        over: Option<SQLWindowSpec>,
+    },
     /// CASE [<operand>] WHEN <condition> THEN <result> ... [ELSE <result>] END
+    /// Note we only recognize a complete single expression as <condition>, not
+    /// `< 0` nor `1, 2, 3` as allowed in a <simple when clause> per
+    /// https://jakewheat.github.io/sql-overview/sql-2011-foundation-grammar.html#simple-when-clause
     SQLCase {
-        // TODO: support optional operand for "simple case"
+        operand: Option<Box<ASTNode>>,
         conditions: Vec<ASTNode>,
         results: Vec<ASTNode>,
         else_result: Option<Box<ASTNode>>,
@@ -117,7 +131,7 @@ impl ToString for ASTNode {
         match self {
             ASTNode::SQLIdentifier(s) => s.to_string(),
             ASTNode::SQLWildcard => "*".to_string(),
-            ASTNode::SQLQualifiedWildcard(q) => q.join(".") + "*",
+            ASTNode::SQLQualifiedWildcard(q) => q.join(".") + ".*",
             ASTNode::SQLCompoundIdentifier(s) => s.join("."),
             ASTNode::SQLIsNull(ast) => format!("{} IS NULL", ast.as_ref().to_string()),
             ASTNode::SQLIsNotNull(ast) => format!("{} IS NOT NULL", ast.as_ref().to_string()),
@@ -129,10 +143,7 @@ impl ToString for ASTNode {
                 "{} {}IN ({})",
                 expr.as_ref().to_string(),
                 if *negated { "NOT " } else { "" },
-                list.iter()
-                    .map(|a| a.to_string())
-                    .collect::<Vec<String>>()
-                    .join(", ")
+                comma_separated_string(list)
             ),
             ASTNode::SQLInSubquery {
                 expr,
@@ -172,28 +183,29 @@ impl ToString for ASTNode {
                 format!("{} {}", operator.to_string(), expr.as_ref().to_string())
             }
             ASTNode::SQLValue(v) => v.to_string(),
-            ASTNode::SQLFunction { id, args } => format!(
-                "{}({})",
-                id,
-                args.iter()
-                    .map(|a| a.to_string())
-                    .collect::<Vec<String>>()
-                    .join(", ")
-            ),
+            ASTNode::SQLFunction { name, args, over } => {
+                let mut s = format!("{}({})", name.to_string(), comma_separated_string(args));
+                if let Some(o) = over {
+                    s += &format!(" OVER ({})", o.to_string())
+                }
+                s
+            }
             ASTNode::SQLCase {
+                operand,
                 conditions,
                 results,
                 else_result,
             } => {
-                let mut s = format!(
-                    "CASE {}",
-                    conditions
-                        .iter()
-                        .zip(results)
-                        .map(|(c, r)| format!("WHEN {} THEN {}", c.to_string(), r.to_string()))
-                        .collect::<Vec<String>>()
-                        .join(" ")
-                );
+                let mut s = "CASE".to_string();
+                if let Some(operand) = operand {
+                    s += &format!(" {}", operand.to_string());
+                }
+                s += &conditions
+                    .iter()
+                    .zip(results)
+                    .map(|(c, r)| format!(" WHEN {} THEN {}", c.to_string(), r.to_string()))
+                    .collect::<Vec<String>>()
+                    .join("");
                 if let Some(else_result) = else_result {
                     s += &format!(" ELSE {}", else_result.to_string())
                 }
@@ -204,11 +216,121 @@ impl ToString for ASTNode {
     }
 }
 
+/// A window specification (i.e. `OVER (PARTITION BY .. ORDER BY .. etc.)`)
+#[derive(Debug, Clone, PartialEq)]
+pub struct SQLWindowSpec {
+    pub partition_by: Vec<ASTNode>,
+    pub order_by: Vec<SQLOrderByExpr>,
+    pub window_frame: Option<SQLWindowFrame>,
+}
+
+impl ToString for SQLWindowSpec {
+    fn to_string(&self) -> String {
+        let mut clauses = vec![];
+        if !self.partition_by.is_empty() {
+            clauses.push(format!(
+                "PARTITION BY {}",
+                comma_separated_string(&self.partition_by)
+            ))
+        };
+        if !self.order_by.is_empty() {
+            clauses.push(format!(
+                "ORDER BY {}",
+                comma_separated_string(&self.order_by)
+            ))
+        };
+        if let Some(window_frame) = &self.window_frame {
+            if let Some(end_bound) = &window_frame.end_bound {
+                clauses.push(format!(
+                    "{} BETWEEN {} AND {}",
+                    window_frame.units.to_string(),
+                    window_frame.start_bound.to_string(),
+                    end_bound.to_string()
+                ));
+            } else {
+                clauses.push(format!(
+                    "{} {}",
+                    window_frame.units.to_string(),
+                    window_frame.start_bound.to_string()
+                ));
+            }
+        }
+        clauses.join(" ")
+    }
+}
+
+/// Specifies the data processed by a window function, e.g.
+/// `RANGE UNBOUNDED PRECEDING` or `ROWS BETWEEN 5 PRECEDING AND CURRENT ROW`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SQLWindowFrame {
+    pub units: SQLWindowFrameUnits,
+    pub start_bound: SQLWindowFrameBound,
+    /// The right bound of the `BETWEEN .. AND` clause.
+    pub end_bound: Option<SQLWindowFrameBound>,
+    // TBD: EXCLUDE
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum SQLWindowFrameUnits {
+    Rows,
+    Range,
+    Groups,
+}
+
+impl ToString for SQLWindowFrameUnits {
+    fn to_string(&self) -> String {
+        match self {
+            SQLWindowFrameUnits::Rows => "ROWS".to_string(),
+            SQLWindowFrameUnits::Range => "RANGE".to_string(),
+            SQLWindowFrameUnits::Groups => "GROUPS".to_string(),
+        }
+    }
+}
+
+impl FromStr for SQLWindowFrameUnits {
+    type Err = ParserError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "ROWS" => Ok(SQLWindowFrameUnits::Rows),
+            "RANGE" => Ok(SQLWindowFrameUnits::Range),
+            "GROUPS" => Ok(SQLWindowFrameUnits::Groups),
+            _ => Err(ParserError::ParserError(format!(
+                "Expected ROWS, RANGE, or GROUPS, found: {}",
+                s
+            ))),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum SQLWindowFrameBound {
+    /// "CURRENT ROW"
+    CurrentRow,
+    /// "<N> PRECEDING" or "UNBOUNDED PRECEDING"
+    Preceding(Option<u64>),
+    /// "<N> FOLLOWING" or "UNBOUNDED FOLLOWING". This can only appear in
+    /// SQLWindowFrame::end_bound.
+    Following(Option<u64>),
+}
+
+impl ToString for SQLWindowFrameBound {
+    fn to_string(&self) -> String {
+        match self {
+            SQLWindowFrameBound::CurrentRow => "CURRENT ROW".to_string(),
+            SQLWindowFrameBound::Preceding(None) => "UNBOUNDED PRECEDING".to_string(),
+            SQLWindowFrameBound::Following(None) => "UNBOUNDED FOLLOWING".to_string(),
+            SQLWindowFrameBound::Preceding(Some(n)) => format!("{} PRECEDING", n),
+            SQLWindowFrameBound::Following(Some(n)) => format!("{} FOLLOWING", n),
+        }
+    }
+}
+
 /// A top-level statement (SELECT, INSERT, CREATE, etc.)
 #[derive(Debug, Clone, PartialEq)]
 pub enum SQLStatement {
     /// SELECT
-    SQLSelect(SQLQuery),
+    SQLQuery(Box<SQLQuery>),
     /// INSERT
     SQLInsert {
         /// TABLE
@@ -252,7 +374,7 @@ pub enum SQLStatement {
     SQLCreateView {
         /// View name
         name: SQLObjectName,
-        query: SQLQuery,
+        query: Box<SQLQuery>,
         materialized: bool,
     },
     /// CREATE TABLE
@@ -261,6 +383,9 @@ pub enum SQLStatement {
         name: SQLObjectName,
         /// Optional schema
         columns: Vec<SQLColumnDef>,
+        external: bool,
+        file_format: Option<FileFormat>,
+        location: Option<String>,
     },
     /// ALTER TABLE
     SQLAlterTable {
@@ -297,26 +422,22 @@ pub enum SQLStatement {
 impl ToString for SQLStatement {
     fn to_string(&self) -> String {
         match self {
-            SQLStatement::SQLSelect(s) => s.to_string(),
+            SQLStatement::SQLQuery(s) => s.to_string(),
             SQLStatement::SQLInsert {
                 table_name,
                 columns,
                 values,
             } => {
                 let mut s = format!("INSERT INTO {}", table_name.to_string());
-                if columns.len() > 0 {
+                if !columns.is_empty() {
                     s += &format!(" ({})", columns.join(", "));
                 }
-                if values.len() > 0 {
+                if !values.is_empty() {
                     s += &format!(
                         " VALUES({})",
                         values
                             .iter()
-                            .map(|row| row
-                                .iter()
-                                .map(|c| c.to_string())
-                                .collect::<Vec<String>>()
-                                .join(", "))
+                            .map(|row| comma_separated_string(row))
                             .collect::<Vec<String>>()
                             .join(", ")
                     );
@@ -329,23 +450,16 @@ impl ToString for SQLStatement {
                 values,
             } => {
                 let mut s = format!("COPY {}", table_name.to_string());
-                if columns.len() > 0 {
-                    s += &format!(
-                        " ({})",
-                        columns
-                            .iter()
-                            .map(|c| c.to_string())
-                            .collect::<Vec<String>>()
-                            .join(", ")
-                    );
+                if !columns.is_empty() {
+                    s += &format!(" ({})", comma_separated_string(columns));
                 }
                 s += " FROM stdin; ";
-                if values.len() > 0 {
+                if !values.is_empty() {
                     s += &format!(
                         "\n{}",
                         values
                             .iter()
-                            .map(|v| v.clone().unwrap_or("\\N".to_string()))
+                            .map(|v| v.clone().unwrap_or_else(|| "\\N".to_string()))
                             .collect::<Vec<String>>()
                             .join("\t")
                     );
@@ -359,15 +473,8 @@ impl ToString for SQLStatement {
                 selection,
             } => {
                 let mut s = format!("UPDATE {}", table_name.to_string());
-                if assignments.len() > 0 {
-                    s += &format!(
-                        "{}",
-                        assignments
-                            .iter()
-                            .map(|ass| ass.to_string())
-                            .collect::<Vec<String>>()
-                            .join(", ")
-                    );
+                if !assignments.is_empty() {
+                    s += &comma_separated_string(assignments);
                 }
                 if let Some(selection) = selection {
                     s += &format!(" WHERE {}", selection.to_string());
@@ -409,14 +516,23 @@ impl ToString for SQLStatement {
                     query.to_string()
                 )
             }
-            SQLStatement::SQLCreateTable { name, columns } => format!(
+            SQLStatement::SQLCreateTable {
+                name,
+                columns,
+                external,
+                file_format,
+                location,
+            } if *external => format!(
+                "CREATE EXTERNAL TABLE {} ({}) STORED AS {} LOCATION '{}'",
+                name.to_string(),
+                comma_separated_string(columns),
+                file_format.as_ref().unwrap().to_string(),
+                location.as_ref().unwrap()
+            ),
+            SQLStatement::SQLCreateTable { name, columns, .. } => format!(
                 "CREATE TABLE {} ({})",
                 name.to_string(),
-                columns
-                    .iter()
-                    .map(|c| c.to_string())
-                    .collect::<Vec<String>>()
-                    .join(", ")
+                comma_separated_string(columns)
             ),
             SQLStatement::SQLDropTable {
                 if_exists,
@@ -512,4 +628,54 @@ pub enum DataSourceSchema {
     /// The schema is available in a Confluent-compatible schema registry that
     /// is accessible at the specified URL.
     Registry(String),
+}
+
+/// External table's available file format
+#[derive(Debug, Clone, PartialEq)]
+pub enum FileFormat {
+    TEXTFILE,
+    SEQUENCEFILE,
+    ORC,
+    PARQUET,
+    AVRO,
+    RCFILE,
+    JSONFILE,
+}
+
+impl ToString for FileFormat {
+    fn to_string(&self) -> String {
+        use self::FileFormat::*;
+        match self {
+            TEXTFILE => "TEXTFILE".to_string(),
+            SEQUENCEFILE => "SEQUENCEFILE".to_string(),
+            ORC => "ORC".to_string(),
+            PARQUET => "PARQUET".to_string(),
+            AVRO => "AVRO".to_string(),
+            RCFILE => "RCFILE".to_string(),
+            JSONFILE => "TEXTFILE".to_string(),
+        }
+    }
+}
+
+use crate::sqlparser::ParserError;
+use std::str::FromStr;
+impl FromStr for FileFormat {
+    type Err = ParserError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        use self::FileFormat::*;
+        match s {
+            "TEXTFILE" => Ok(TEXTFILE),
+            "SEQUENCEFILE" => Ok(SEQUENCEFILE),
+            "ORC" => Ok(ORC),
+            "PARQUET" => Ok(PARQUET),
+            "AVRO" => Ok(AVRO),
+            "RCFILE" => Ok(RCFILE),
+            "JSONFILE" => Ok(JSONFILE),
+            _ => Err(ParserError::ParserError(format!(
+                "Unexpected file format: {}",
+                s
+            ))),
+        }
+    }
 }
