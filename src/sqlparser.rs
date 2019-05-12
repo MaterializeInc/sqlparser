@@ -775,8 +775,7 @@ impl Parser {
     pub fn parse_drop(&mut self) -> Result<SQLStatement, ParserError> {
         if self.parse_keyword("TABLE") {
             self.parse_drop_table()
-        } else if self.parse_keyword("MATERIALIZED") || self.parse_keyword("VIEW") {
-            self.prev_token();
+        } else if self.parse_keyword("VIEW") {
             self.parse_drop_view()
         } else if self.parse_keyword("DATA") {
             self.parse_drop_data_source()
@@ -789,6 +788,19 @@ impl Parser {
     }
 
     pub fn parse_drop_table(&mut self) -> Result<SQLStatement, ParserError> {
+        Ok(SQLStatement::SQLDropTable(self.parse_drop_inner()?))
+    }
+
+    pub fn parse_drop_data_source(&mut self) -> Result<SQLStatement, ParserError> {
+        self.expect_keyword("SOURCE")?;
+        Ok(SQLStatement::SQLDropDataSource(self.parse_drop_inner()?))
+    }
+
+    pub fn parse_drop_view(&mut self) -> Result<SQLStatement, ParserError> {
+        Ok(SQLStatement::SQLDropView(self.parse_drop_inner()?))
+    }
+
+    pub fn parse_drop_inner(&mut self) -> Result<SQLDrop, ParserError> {
         let if_exists = self.parse_keywords(vec!["IF", "EXISTS"]);
         let mut names = vec![self.parse_object_name()?];
         loop {
@@ -804,25 +816,12 @@ impl Parser {
         }
         let cascade = self.parse_keyword("CASCADE");
         let restrict = !cascade && self.parse_keyword("RESTRICT");
-        Ok(SQLStatement::SQLDropTable {
+        Ok(SQLDrop {
             if_exists,
             names,
             cascade,
             restrict,
         })
-    }
-
-    pub fn parse_drop_data_source(&mut self) -> Result<SQLStatement, ParserError> {
-        self.expect_keyword("SOURCE")?;
-        let name = self.parse_object_name()?;
-        Ok(SQLStatement::SQLDropDataSource { name })
-    }
-
-    pub fn parse_drop_view(&mut self) -> Result<SQLStatement, ParserError> {
-        let materialized = self.parse_keyword("MATERIALIZED");
-        self.expect_keyword("VIEW")?;
-        let name = self.parse_object_name()?;
-        Ok(SQLStatement::SQLDropView { name, materialized })
     }
 
     pub fn parse_create_table(&mut self) -> Result<SQLStatement, ParserError> {

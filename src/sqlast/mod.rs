@@ -394,22 +394,11 @@ pub enum SQLStatement {
         operation: AlterOperation,
     },
     /// DROP TABLE
-    SQLDropTable {
-        if_exists: bool,
-        names: Vec<SQLObjectName>,
-        cascade: bool,
-        restrict: bool,
-    },
+    SQLDropTable(SQLDrop),
     /// DROP DATA SOURCE
-    SQLDropDataSource {
-        name: SQLObjectName,
-    },
+    SQLDropDataSource(SQLDrop),
     /// DROP VIEW
-    SQLDropView {
-        /// View name
-        name: SQLObjectName,
-        materialized: bool,
-    },
+    SQLDropView(SQLDrop),
     /// PEEK
     SQLPeek {
         name: SQLObjectName,
@@ -534,30 +523,9 @@ impl ToString for SQLStatement {
                 name.to_string(),
                 comma_separated_string(columns)
             ),
-            SQLStatement::SQLDropTable {
-                if_exists,
-                names,
-                cascade,
-                restrict,
-            } => format!(
-                "DROP TABLE{} {}{}{}",
-                if *if_exists { " IF EXISTS" } else { "" },
-                names
-                    .iter()
-                    .map(|name| name.to_string())
-                    .collect::<Vec<String>>()
-                    .join(", "),
-                if *cascade { " CASCADE" } else { "" },
-                if *restrict { " RESTRICT" } else { "" },
-            ),
-
-            SQLStatement::SQLDropDataSource { name } => {
-                format!("DROP DATA SOURCE {}", name.to_string(),)
-            }
-            SQLStatement::SQLDropView { name, materialized } => {
-                let modifier = if *materialized { " MATERIALIZED" } else { "" };
-                format!("DROP{} VIEW {}", modifier, name.to_string(),)
-            }
+            SQLStatement::SQLDropTable(drop) => drop.to_string_internal("TABLE"),
+            SQLStatement::SQLDropDataSource(drop) => drop.to_string_internal("DATA SOURCE"),
+            SQLStatement::SQLDropView(drop) => drop.to_string_internal("VIEW"),
             SQLStatement::SQLAlterTable { name, operation } => {
                 format!("ALTER TABLE {} {}", name.to_string(), operation.to_string())
             }
@@ -677,5 +645,30 @@ impl FromStr for FileFormat {
                 s
             ))),
         }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SQLDrop {
+    pub if_exists: bool,
+    pub names: Vec<SQLObjectName>,
+    pub cascade: bool,
+    pub restrict: bool,
+}
+
+impl SQLDrop {
+    fn to_string_internal(&self, object_type: &str) -> String {
+        format!(
+            "DROP {}{} {}{}{}",
+            object_type,
+            if self.if_exists { " IF EXISTS" } else { "" },
+            self.names
+                .iter()
+                .map(|name| name.to_string())
+                .collect::<Vec<String>>()
+                .join(", "),
+            if self.cascade { " CASCADE" } else { "" },
+            if self.restrict { " RESTRICT" } else { "" },
+        )
     }
 }

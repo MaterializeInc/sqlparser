@@ -314,22 +314,8 @@ pub trait Visit<'ast> {
 
     fn visit_file_format(&mut self, _file_format: &'ast FileFormat) {}
 
-    fn visit_drop_table(
-        &mut self,
-        if_exists: bool,
-        names: &'ast Vec<SQLObjectName>,
-        cascade: bool,
-        restrict: bool,
-    ) {
-        visit_drop_table(self, if_exists, names, cascade, restrict)
-    }
-
-    fn visit_drop_data_source(&mut self, name: &'ast SQLObjectName) {
-        visit_drop_data_source(self, name)
-    }
-
-    fn visit_drop_view(&mut self, name: &'ast SQLObjectName, materialized: bool) {
-        visit_drop_view(self, name, materialized)
+    fn visit_drop(&mut self, drop: &'ast SQLDrop) {
+        visit_drop(self, drop)
     }
 
     fn visit_alter_table(&mut self, name: &'ast SQLObjectName, operation: &'ast AlterOperation) {
@@ -415,16 +401,9 @@ pub fn visit_statement<'ast, V: Visit<'ast> + ?Sized>(
             query,
             materialized,
         } => visitor.visit_create_view(name, query, *materialized),
-        SQLStatement::SQLDropTable {
-            if_exists,
-            names,
-            cascade,
-            restrict,
-        } => visitor.visit_drop_table(*if_exists, &names, *cascade, *restrict),
-        SQLStatement::SQLDropDataSource { name } => visitor.visit_drop_data_source(name),
-        SQLStatement::SQLDropView { name, materialized } => {
-            visitor.visit_drop_view(name, *materialized)
-        }
+        SQLStatement::SQLDropTable(drop) => visitor.visit_drop(drop),
+        SQLStatement::SQLDropDataSource(drop) => visitor.visit_drop(drop),
+        SQLStatement::SQLDropView(drop) => visitor.visit_drop(drop),
         SQLStatement::SQLCreateTable {
             name,
             columns,
@@ -977,23 +956,10 @@ fn visit_data_source_schema<'ast, V: Visit<'ast> + ?Sized>(
     }
 }
 
-pub fn visit_drop_table<'ast, V: Visit<'ast> + ?Sized>(
-    visitor: &mut V,
-    _if_exists: bool,
-    names: &'ast Vec<SQLObjectName>,
-    _cascade: bool,
-    _restrict: bool,
-) {
-    for name in names {
+pub fn visit_drop<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, drop: &'ast SQLDrop) {
+    for name in &drop.names {
         visitor.visit_object_name(name);
     }
-}
-
-pub fn visit_drop_data_source<'ast, V: Visit<'ast> + ?Sized>(
-    visitor: &mut V,
-    name: &'ast SQLObjectName,
-) {
-    visitor.visit_object_name(name);
 }
 
 pub fn visit_create_view<'ast, V: Visit<'ast> + ?Sized>(
@@ -1004,14 +970,6 @@ pub fn visit_create_view<'ast, V: Visit<'ast> + ?Sized>(
 ) {
     visitor.visit_object_name(name);
     visitor.visit_query(&query);
-}
-
-pub fn visit_drop_view<'ast, V: Visit<'ast> + ?Sized>(
-    visitor: &mut V,
-    name: &'ast SQLObjectName,
-    _materialized: bool,
-) {
-    visitor.visit_object_name(name);
 }
 
 pub fn visit_create_table<'ast, V: Visit<'ast> + ?Sized>(

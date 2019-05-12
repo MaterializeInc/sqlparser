@@ -1135,12 +1135,12 @@ fn parse_create_data_source_registry() {
 fn parse_drop_table() {
     let sql = "DROP TABLE foo";
     match verified_stmt(sql) {
-        SQLStatement::SQLDropTable {
+        SQLStatement::SQLDropTable(SQLDrop {
             if_exists,
             names,
             cascade,
             restrict,
-        } => {
+        }) => {
             assert_eq!(false, if_exists);
             assert_eq!(
                 vec!["foo"],
@@ -1154,12 +1154,12 @@ fn parse_drop_table() {
 
     let sql = "DROP TABLE IF EXISTS foo, bar CASCADE";
     match verified_stmt(sql) {
-        SQLStatement::SQLDropTable {
+        SQLStatement::SQLDropTable(SQLDrop {
             if_exists,
             names,
             cascade,
             restrict,
-        } => {
+        }) => {
             assert_eq!(true, if_exists);
             assert_eq!(
                 vec!["foo", "bar"],
@@ -1182,8 +1182,11 @@ fn parse_drop_table() {
 fn parse_drop_data_source() {
     let sql = "DROP DATA SOURCE myschema.mydatasource";
     match verified_stmt(sql) {
-        SQLStatement::SQLDropDataSource { name } => {
-            assert_eq!("myschema.mydatasource", name.to_string());
+        SQLStatement::SQLDropDataSource(SQLDrop { names, .. }) => {
+            assert_eq!(
+                vec!["myschema.mydatasource"],
+                names.iter().map(|n| n.to_string()).collect::<Vec<_>>()
+            );
         }
         _ => assert!(false),
     }
@@ -1193,21 +1196,11 @@ fn parse_drop_data_source() {
 fn parse_drop_view() {
     let sql = "DROP VIEW myschema.myview";
     match verified_stmt(sql) {
-        SQLStatement::SQLDropView { name, materialized } => {
-            assert_eq!("myschema.myview", name.to_string());
-            assert!(!materialized);
-        }
-        _ => assert!(false),
-    }
-}
-
-#[test]
-fn parse_drop_materialized_view() {
-    let sql = "DROP MATERIALIZED VIEW myschema.myview";
-    match verified_stmt(sql) {
-        SQLStatement::SQLDropView { name, materialized } => {
-            assert_eq!("myschema.myview", name.to_string());
-            assert!(materialized);
+        SQLStatement::SQLDropView(SQLDrop { names, .. }) => {
+            assert_eq!(
+                vec!["myschema.myview"],
+                names.iter().map(|n| n.to_string()).collect::<Vec<_>>()
+            );
         }
         _ => assert!(false),
     }
