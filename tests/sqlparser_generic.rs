@@ -1237,6 +1237,15 @@ fn parse_invalid_subquery_without_parens() {
     );
 }
 
+#[test]
+fn parse_invalid_infix_not() {
+    let res = parse_sql_statements("SELECT col1 FROM tab2 AS coz0 WHERE NOT + colNG NOT ( NULL INSERTULL");
+    assert_eq!(
+        ParserError::ParserError("Expected IN or BETWEEN after NOT, found: (".to_string()),
+        res.unwrap_err(),
+    );
+}
+
 fn only<T>(v: &[T]) -> &T {
     assert_eq!(1, v.len());
     v.first().unwrap()
