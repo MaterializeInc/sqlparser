@@ -293,19 +293,21 @@ pub trait Visit<'ast> {
         name: &'ast SQLObjectName,
         query: &'ast SQLQuery,
         materialized: bool,
+        with_options: &'ast Vec<SQLOption>,
     ) {
-        visit_create_view(self, name, query, materialized)
+        visit_create_view(self, name, query, materialized, with_options)
     }
 
     fn visit_create_table(
         &mut self,
         name: &'ast SQLObjectName,
         columns: &'ast Vec<SQLColumnDef>,
+        with_options: &'ast Vec<SQLOption>,
         external: bool,
         file_format: &'ast Option<FileFormat>,
         location: &'ast Option<String>,
     ) {
-        visit_create_table(self, name, columns, external, file_format, location)
+        visit_create_table(self, name, columns, with_options, external, file_format, location)
     }
 
     fn visit_column_def(&mut self, column_def: &'ast SQLColumnDef) {
@@ -317,6 +319,10 @@ pub trait Visit<'ast> {
     }
 
     fn visit_file_format(&mut self, _file_format: &'ast FileFormat) {}
+
+    fn visit_option(&mut self, option: &'ast SQLOption) {
+        visit_option(self, option)
+    }
 
     fn visit_drop(&mut self, drop: &'ast SQLDrop) {
         visit_drop(self, drop)
@@ -404,7 +410,8 @@ pub fn visit_statement<'ast, V: Visit<'ast> + ?Sized>(
             name,
             query,
             materialized,
-        } => visitor.visit_create_view(name, query, *materialized),
+            with_options,
+        } => visitor.visit_create_view(name, query, *materialized, with_options),
         SQLStatement::SQLDropTable(drop) => visitor.visit_drop(drop),
         SQLStatement::SQLDropDataSource(drop) => visitor.visit_drop(drop),
         SQLStatement::SQLDropView(drop) => visitor.visit_drop(drop),
@@ -412,9 +419,10 @@ pub fn visit_statement<'ast, V: Visit<'ast> + ?Sized>(
             name,
             columns,
             external,
+            with_options,
             file_format,
             location,
-        } => visitor.visit_create_table(name, columns, *external, file_format, location),
+        } => visitor.visit_create_table(name, columns, with_options, *external, file_format, location),
         SQLStatement::SQLAlterTable { name, operation } => {
             visitor.visit_alter_table(name, operation)
         }
@@ -977,15 +985,20 @@ pub fn visit_create_view<'ast, V: Visit<'ast> + ?Sized>(
     name: &'ast SQLObjectName,
     query: &'ast SQLQuery,
     _materialized: bool,
+    with_options: &'ast Vec<SQLOption>,
 ) {
     visitor.visit_object_name(name);
     visitor.visit_query(&query);
+    for option in with_options {
+        visitor.visit_option(option);
+    }
 }
 
 pub fn visit_create_table<'ast, V: Visit<'ast> + ?Sized>(
     visitor: &mut V,
     name: &'ast SQLObjectName,
     columns: &'ast Vec<SQLColumnDef>,
+    with_options: &'ast Vec<SQLOption>,
     _external: bool,
     file_format: &'ast Option<FileFormat>,
     location: &'ast Option<String>,
@@ -993,6 +1006,9 @@ pub fn visit_create_table<'ast, V: Visit<'ast> + ?Sized>(
     visitor.visit_object_name(name);
     for column in columns {
         visitor.visit_column_def(column);
+    }
+    for option in with_options {
+        visitor.visit_option(option);
     }
     if let Some(file_format) = file_format {
         visitor.visit_file_format(file_format);
@@ -1019,6 +1035,14 @@ pub fn visit_column_default<'ast, V: Visit<'ast> + ?Sized>(
         Some(expr) => visitor.visit_expr(expr),
         None => (),
     }
+}
+
+pub fn visit_option<'ast, V: Visit<'ast> + ?Sized>(
+    visitor: &mut V,
+    option: &'ast SQLOption,
+) {
+    visitor.visit_identifier(&option.name);
+    visitor.visit_value(&option.value);
 }
 
 pub fn visit_alter_table<'ast, V: Visit<'ast> + ?Sized>(

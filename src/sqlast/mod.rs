@@ -389,6 +389,7 @@ pub enum SQLStatement {
         name: SQLObjectName,
         query: Box<SQLQuery>,
         materialized: bool,
+        with_options: Vec<SQLOption>,
     },
     /// CREATE TABLE
     SQLCreateTable {
@@ -396,6 +397,7 @@ pub enum SQLStatement {
         name: SQLObjectName,
         /// Optional schema
         columns: Vec<SQLColumnDef>,
+        with_options: Vec<SQLOption>,
         external: bool,
         file_format: Option<FileFormat>,
         location: Option<String>,
@@ -509,12 +511,19 @@ impl ToString for SQLStatement {
                 name,
                 query,
                 materialized,
+                with_options,
             } => {
                 let modifier = if *materialized { " MATERIALIZED" } else { "" };
+                let with_options = if !with_options.is_empty() {
+                    format!(" WITH ({})", comma_separated_string(with_options))
+                } else {
+                    "".into()
+                };
                 format!(
-                    "CREATE{} VIEW {} AS {}",
+                    "CREATE{} VIEW {}{} AS {}",
                     modifier,
                     name.to_string(),
+                    with_options,
                     query.to_string()
                 )
             }
@@ -524,6 +533,7 @@ impl ToString for SQLStatement {
                 external,
                 file_format,
                 location,
+                ..
             } if *external => format!(
                 "CREATE EXTERNAL TABLE {} ({}) STORED AS {} LOCATION '{}'",
                 name.to_string(),
@@ -531,11 +541,19 @@ impl ToString for SQLStatement {
                 file_format.as_ref().unwrap().to_string(),
                 location.as_ref().unwrap()
             ),
-            SQLStatement::SQLCreateTable { name, columns, .. } => format!(
-                "CREATE TABLE {} ({})",
-                name.to_string(),
-                comma_separated_string(columns)
-            ),
+            SQLStatement::SQLCreateTable { name, columns, with_options, .. } => {
+                let with_options = if !with_options.is_empty() {
+                    format!(" WITH ({})", comma_separated_string(with_options))
+                } else {
+                    "".into()
+                };
+                format!(
+                    "CREATE TABLE {} ({}){}",
+                    name.to_string(),
+                    comma_separated_string(columns),
+                    with_options,
+                )
+            }
             SQLStatement::SQLDropTable(drop) => drop.to_string_internal("TABLE"),
             SQLStatement::SQLDropDataSource(drop) => drop.to_string_internal("DATA SOURCE"),
             SQLStatement::SQLDropView(drop) => drop.to_string_internal("VIEW"),
@@ -683,5 +701,17 @@ impl SQLDrop {
             if self.cascade { " CASCADE" } else { "" },
             if self.restrict { " RESTRICT" } else { "" },
         )
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SQLOption {
+    pub name: SQLIdent,
+    pub value: Value,
+}
+
+impl ToString for SQLOption {
+    fn to_string(&self) -> String {
+        format!("{} = {}", self.name.to_string(), self.value.to_string())
     }
 }
