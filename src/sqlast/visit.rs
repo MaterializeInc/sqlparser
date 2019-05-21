@@ -278,12 +278,23 @@ pub trait Visit<'ast> {
         name: &'ast SQLObjectName,
         url: &'ast String,
         schema: &'ast DataSourceSchema,
+        with_options: &'ast Vec<SQLOption>,
     ) {
-        visit_create_data_source(self, name, url, schema)
+        visit_create_data_source(self, name, url, schema, with_options)
     }
 
     fn visit_data_source_schema(&mut self, data_source_schema: &'ast DataSourceSchema) {
         visit_data_source_schema(self, data_source_schema)
+    }
+
+    fn visit_create_data_sink(
+        &mut self,
+        name: &'ast SQLObjectName,
+        from: &'ast SQLObjectName,
+        url: &'ast String,
+        with_options: &'ast Vec<SQLOption>,
+    ) {
+        visit_create_data_sink(self, name, from, url, with_options)
     }
 
     fn visit_literal_string(&mut self, _string: &'ast String) {}
@@ -403,8 +414,11 @@ pub fn visit_statement<'ast, V: Visit<'ast> + ?Sized>(
             table_name,
             selection,
         } => visitor.visit_delete(table_name, selection.as_ref()),
-        SQLStatement::SQLCreateDataSource { name, url, schema } => {
-            visitor.visit_create_data_source(name, url, schema)
+        SQLStatement::SQLCreateDataSource { name, url, schema, with_options } => {
+            visitor.visit_create_data_source(name, url, schema, with_options)
+        }
+        SQLStatement::SQLCreateDataSink { name, from, url, with_options } => {
+            visitor.visit_create_data_sink(name, from, url, with_options)
         }
         SQLStatement::SQLCreateView {
             name,
@@ -958,10 +972,14 @@ pub fn visit_create_data_source<'ast, V: Visit<'ast> + ?Sized>(
     name: &'ast SQLObjectName,
     url: &'ast String,
     schema: &'ast DataSourceSchema,
+    with_options: &'ast Vec<SQLOption>,
 ) {
     visitor.visit_object_name(name);
     visitor.visit_literal_string(url);
     visitor.visit_data_source_schema(schema);
+    for option in with_options {
+        visitor.visit_option(option);
+    }
 }
 
 fn visit_data_source_schema<'ast, V: Visit<'ast> + ?Sized>(
@@ -971,6 +989,21 @@ fn visit_data_source_schema<'ast, V: Visit<'ast> + ?Sized>(
     match data_source_schema {
         DataSourceSchema::Raw(schema) => visitor.visit_literal_string(schema),
         DataSourceSchema::Registry(url) => visitor.visit_literal_string(url),
+    }
+}
+
+pub fn visit_create_data_sink<'ast, V: Visit<'ast> + ?Sized>(
+    visitor: &mut V,
+    name: &'ast SQLObjectName,
+    from: &'ast SQLObjectName,
+    url: &'ast String,
+    with_options: &'ast Vec<SQLOption>,
+) {
+    visitor.visit_object_name(name);
+    visitor.visit_object_name(from);
+    visitor.visit_literal_string(url);
+    for option in with_options {
+        visitor.visit_option(option);
     }
 }
 

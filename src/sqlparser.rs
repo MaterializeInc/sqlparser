@@ -721,7 +721,14 @@ impl Parser {
             self.prev_token();
             self.parse_create_view()
         } else if self.parse_keyword("DATA") {
-            self.parse_create_data_source()
+            if self.parse_keyword("SOURCE") {
+                self.parse_create_data_source()
+            } else if self.parse_keyword("SINK") {
+                self.parse_create_data_sink()
+            } else {
+                parser_err!(format!("Expected SOURCE or SINK after CREATE DATA, found: {:?}",
+                    self.peek_token()))
+            }
         } else if self.parse_keyword("EXTERNAL") {
             self.parse_create_external_table()
         } else {
@@ -730,7 +737,6 @@ impl Parser {
     }
 
     pub fn parse_create_data_source(&mut self) -> Result<SQLStatement, ParserError> {
-        self.expect_keyword("SOURCE")?;
         let name = self.parse_object_name()?;
         self.expect_keyword("FROM")?;
         let url = self.parse_literal_string()?;
@@ -741,7 +747,24 @@ impl Parser {
         } else {
             DataSourceSchema::Raw(self.parse_literal_string()?)
         };
-        Ok(SQLStatement::SQLCreateDataSource { name, url, schema })
+        let mut with_options = vec![];
+        if self.parse_keyword("WITH") {
+            with_options = self.parse_with_options()?;
+        }
+        Ok(SQLStatement::SQLCreateDataSource { name, url, schema, with_options })
+    }
+
+    pub fn parse_create_data_sink(&mut self) -> Result<SQLStatement, ParserError> {
+        let name = self.parse_object_name()?;
+        self.expect_keyword("FROM")?;
+        let from = self.parse_object_name()?;
+        self.expect_keyword("INTO")?;
+        let url = self.parse_literal_string()?;
+        let mut with_options = vec![];
+        if self.parse_keyword("WITH") {
+            with_options = self.parse_with_options()?;
+        }
+        Ok(SQLStatement::SQLCreateDataSink { name, from, url, with_options })
     }
 
     pub fn parse_create_external_table(&mut self) -> Result<SQLStatement, ParserError> {

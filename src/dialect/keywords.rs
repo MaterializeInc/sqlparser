@@ -336,6 +336,7 @@ define_keywords!(
     SESSION_USER,
     SET,
     SIMILAR,
+    SINK,
     SMALLINT,
     SOME,
     SOURCE,

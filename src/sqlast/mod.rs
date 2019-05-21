@@ -382,6 +382,14 @@ pub enum SQLStatement {
         name: SQLObjectName,
         url: String,
         schema: DataSourceSchema,
+        with_options: Vec<SQLOption>,
+    },
+    /// CREATE DATA SINK
+    SQLCreateDataSink {
+        name: SQLObjectName,
+        from: SQLObjectName,
+        url: String,
+        with_options: Vec<SQLOption>,
     },
     /// CREATE VIEW
     SQLCreateView {
@@ -495,18 +503,41 @@ impl ToString for SQLStatement {
                 }
                 s
             }
-            SQLStatement::SQLCreateDataSource { name, url, schema } => format!(
-                "CREATE DATA SOURCE {} FROM {} USING SCHEMA {}",
-                name.to_string(),
-                Value::SingleQuotedString(url.clone()).to_string(),
-                match schema {
-                    DataSourceSchema::Raw(schema) => {
-                        Value::SingleQuotedString(schema.clone()).to_string()
-                    }
-                    DataSourceSchema::Registry(url) => {
-                        format!("REGISTRY {}", Value::SingleQuotedString(url.clone()).to_string())
-                    }
-                }),
+            SQLStatement::SQLCreateDataSource { name, url, schema, with_options } => {
+                let with_options = if !with_options.is_empty() {
+                    format!(" WITH ({})", comma_separated_string(with_options))
+                } else {
+                    "".into()
+                };
+                format!(
+                    "CREATE DATA SOURCE {} FROM {} USING SCHEMA {}{}",
+                    name.to_string(),
+                    Value::SingleQuotedString(url.clone()).to_string(),
+                    match schema {
+                        DataSourceSchema::Raw(schema) => {
+                            Value::SingleQuotedString(schema.clone()).to_string()
+                        }
+                        DataSourceSchema::Registry(url) => {
+                            format!("REGISTRY {}", Value::SingleQuotedString(url.clone()).to_string())
+                        }
+                    },
+                    with_options
+                )
+            }
+            SQLStatement::SQLCreateDataSink { name, from, url, with_options } => {
+                let with_options = if !with_options.is_empty() {
+                    format!(" WITH ({})", comma_separated_string(with_options))
+                } else {
+                    "".into()
+                };
+                format!(
+                    "CREATE DATA SINK {} FROM {} INTO {}{}",
+                    name.to_string(),
+                    from.to_string(),
+                    Value::SingleQuotedString(url.clone()).to_string(),
+                    with_options
+                )
+            }
             SQLStatement::SQLCreateView {
                 name,
                 query,
