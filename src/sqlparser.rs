@@ -25,7 +25,6 @@ use super::dialect::keywords;
 use super::dialect::Dialect;
 use super::sqlast::*;
 use super::sqltokenizer::*;
-use chrono::{offset::FixedOffset, DateTime, NaiveDate, NaiveDateTime, NaiveTime};
 use std::error::Error;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -40,6 +39,13 @@ macro_rules! parser_err {
         Err(ParserError::ParserError($MSG.to_string()))
     };
 }
+
+#[derive(PartialEq)]
+pub enum IsOptional {
+    Optional,
+    Mandatory,
+}
+use IsOptional::*;
 
 impl From<TokenizerError> for ParserError {
     fn from(e: TokenizerError) -> Self {
@@ -184,87 +190,92 @@ impl Parser {
 
     /// Parse an expression prefix
     pub fn parse_prefix(&mut self) -> Result<ASTNode, ParserError> {
-        match self.next_token() {
-            Some(t) => match t {
-                Token::SQLWord(w) => match w.keyword.as_ref() {
-                    "TRUE" | "FALSE" | "NULL" => {
-                        self.prev_token();
-                        self.parse_sql_value()
-                    }
-                    "CASE" => self.parse_case_expression(),
-                    "CAST" => self.parse_cast_expression(),
-                    "NOT" => {
-                        let p = self.get_precedence(&Token::make_keyword("NOT"))?;
-                        Ok(ASTNode::SQLUnary {
-                            operator: SQLOperator::Not,
-                            expr: Box::new(self.parse_subexpr(p)?),
-                        })
-                    }
-                    // Here `w` is a word, check if it's a part of a multi-part
-                    // identifier, a function call, or a simple identifier:
-                    _ => match self.peek_token() {
-                        Some(Token::LParen) | Some(Token::Period) => {
-                            let mut id_parts: Vec<SQLIdent> = vec![w.as_sql_ident()];
-                            let mut ends_with_wildcard = false;
-                            while self.consume_token(&Token::Period) {
-                                match self.next_token() {
-                                    Some(Token::SQLWord(w)) => id_parts.push(w.as_sql_ident()),
-                                    Some(Token::Mult) => {
-                                        ends_with_wildcard = true;
-                                        break;
-                                    }
-                                    unexpected => {
-                                        return self.expected(
-                                            "an identifier or a '*' after '.'",
-                                            unexpected,
-                                        );
-                                    }
-                                }
-                            }
-                            if ends_with_wildcard {
-                                Ok(ASTNode::SQLQualifiedWildcard(id_parts))
-                            } else if self.consume_token(&Token::LParen) {
-                                self.prev_token();
-                                self.parse_function(SQLObjectName(id_parts))
-                            } else {
-                                Ok(ASTNode::SQLCompoundIdentifier(id_parts))
-                            }
-                        }
-                        _ => Ok(ASTNode::SQLIdentifier(w.as_sql_ident())),
-                    },
-                }, // End of Token::SQLWord
-                Token::Mult => Ok(ASTNode::SQLWildcard),
-                tok @ Token::Minus | tok @ Token::Plus => {
-                    let p = self.get_precedence(&tok)?;
-                    let operator = if tok == Token::Plus {
-                        SQLOperator::Plus
-                    } else {
-                        SQLOperator::Minus
-                    };
-                    Ok(ASTNode::SQLUnary {
-                        operator,
-                        expr: Box::new(self.parse_subexpr(p)?),
-                    })
-                }
-                Token::Number(_)
-                | Token::SingleQuotedString(_)
-                | Token::NationalStringLiteral(_) => {
+        let tok = self
+            .next_token()
+            .ok_or_else(|| ParserError::ParserError("Unexpected EOF".to_string()))?;
+        let expr = match tok {
+            Token::SQLWord(w) => match w.keyword.as_ref() {
+                "TRUE" | "FALSE" | "NULL" => {
                     self.prev_token();
                     self.parse_sql_value()
                 }
-                Token::LParen => {
-                    let expr = if self.parse_keyword("SELECT") || self.parse_keyword("WITH") {
-                        self.prev_token();
-                        ASTNode::SQLSubquery(Box::new(self.parse_query()?))
-                    } else {
-                        ASTNode::SQLNested(Box::new(self.parse_expr()?))
-                    };
-                    self.expect_token(&Token::RParen)?;
-                    Ok(expr)
+                "CASE" => self.parse_case_expression(),
+                "CAST" => self.parse_cast_expression(),
+                "NOT" => {
+                    let p = self.get_precedence(&Token::make_keyword("NOT"))?;
+                    Ok(ASTNode::SQLUnary {
+                        operator: SQLOperator::Not,
+                        expr: Box::new(self.parse_subexpr(p)?),
+                    })
                 }
-                _ => self.expected("an expression", Some(t)),
-            },
-            None => parser_err!("Prefix parser expected a keyword but hit EOF"),
+                // Here `w` is a word, check if it's a part of a multi-part
+                // identifier, a function call, or a simple identifier:
+                _ => match self.peek_token() {
+                    Some(Token::LParen) | Some(Token::Period) => {
+                        let mut id_parts: Vec<SQLIdent> = vec![w.as_sql_ident()];
+                        let mut ends_with_wildcard = false;
+                        while self.consume_token(&Token::Period) {
+                            match self.next_token() {
+                                Some(Token::SQLWord(w)) => id_parts.push(w.as_sql_ident()),
+                                Some(Token::Mult) => {
+                                    ends_with_wildcard = true;
+                                    break;
+                                }
+                                unexpected => {
+                                    return self
+                                        .expected("an identifier or a '*' after '.'", unexpected);
+                                }
+                            }
+                        }
+                        if ends_with_wildcard {
+                            Ok(ASTNode::SQLQualifiedWildcard(id_parts))
+                        } else if self.consume_token(&Token::LParen) {
+                            self.prev_token();
+                            self.parse_function(SQLObjectName(id_parts))
+                        } else {
+                            Ok(ASTNode::SQLCompoundIdentifier(id_parts))
+                        }
+                    }
+                    _ => Ok(ASTNode::SQLIdentifier(w.as_sql_ident())),
+                },
+            }, // End of Token::SQLWord
+            Token::Mult => Ok(ASTNode::SQLWildcard),
+            tok @ Token::Minus | tok @ Token::Plus => {
+                let p = self.get_precedence(&tok)?;
+                let operator = if tok == Token::Plus {
+                    SQLOperator::Plus
+                } else {
+                    SQLOperator::Minus
+                };
+                Ok(ASTNode::SQLUnary {
+                    operator,
+                    expr: Box::new(self.parse_subexpr(p)?),
+                })
+            }
+            Token::Number(_) | Token::SingleQuotedString(_) | Token::NationalStringLiteral(_) => {
+                self.prev_token();
+                self.parse_sql_value()
+            }
+            Token::LParen => {
+                let expr = if self.parse_keyword("SELECT") || self.parse_keyword("WITH") {
+                    self.prev_token();
+                    ASTNode::SQLSubquery(Box::new(self.parse_query()?))
+                } else {
+                    ASTNode::SQLNested(Box::new(self.parse_expr()?))
+                };
+                self.expect_token(&Token::RParen)?;
+                Ok(expr)
+            }
+            unexpected => self.expected("an expression", Some(unexpected)),
+        }?;
+
+        if self.parse_keyword("COLLATE") {
+            Ok(ASTNode::SQLCollate {
+                expr: Box::new(expr),
+                collation: self.parse_object_name()?,
+            })
+        } else {
+            Ok(expr)
         }
     }
 
@@ -898,9 +909,7 @@ impl Parser {
         let is_primary_key = self.parse_keywords(vec!["PRIMARY", "KEY"]);
         let is_unique_key = self.parse_keywords(vec!["UNIQUE", "KEY"]);
         let is_foreign_key = self.parse_keywords(vec!["FOREIGN", "KEY"]);
-        self.expect_token(&Token::LParen)?;
-        let column_names = self.parse_column_names()?;
-        self.expect_token(&Token::RParen)?;
+        let column_names = self.parse_parenthesized_column_list(Mandatory)?;
         let key = Key {
             name: constraint_name,
             columns: column_names,
@@ -912,9 +921,7 @@ impl Parser {
         } else if is_foreign_key {
             self.expect_keyword("REFERENCES")?;
             let foreign_table = self.parse_object_name()?;
-            self.expect_token(&Token::LParen)?;
-            let referred_columns = self.parse_column_names()?;
-            self.expect_token(&Token::RParen)?;
+            let referred_columns = self.parse_parenthesized_column_list(Mandatory)?;
             Ok(TableKey::ForeignKey {
                 key,
                 foreign_table,
@@ -952,13 +959,7 @@ impl Parser {
     /// Parse a copy statement
     pub fn parse_copy(&mut self) -> Result<SQLStatement, ParserError> {
         let table_name = self.parse_object_name()?;
-        let columns = if self.consume_token(&Token::LParen) {
-            let column_names = self.parse_column_names()?;
-            self.expect_token(&Token::RParen)?;
-            column_names
-        } else {
-            vec![]
-        };
+        let columns = self.parse_parenthesized_column_list(Optional)?;
         self.expect_keyword("FROM")?;
         self.expect_keyword("STDIN")?;
         self.expect_token(&Token::SemiColon)?;
@@ -1019,37 +1020,29 @@ impl Parser {
     /// Parse a literal value (numbers, strings, date/time, booleans)
     fn parse_value(&mut self) -> Result<Value, ParserError> {
         match self.next_token() {
-            Some(t) => {
-                match t {
-                    Token::SQLWord(k) => match k.keyword.as_ref() {
-                        "TRUE" => Ok(Value::Boolean(true)),
-                        "FALSE" => Ok(Value::Boolean(false)),
-                        "NULL" => Ok(Value::Null),
-                        _ => {
-                            return parser_err!(format!(
-                                "No value parser for keyword {}",
-                                k.keyword
-                            ));
-                        }
-                    },
-                    //TODO: parse the timestamp here (see parse_timestamp_value())
-                    Token::Number(ref n) if n.contains('.') => match n.parse::<f64>() {
-                        Ok(n) => Ok(Value::Double(n)),
-                        Err(e) => parser_err!(format!("Could not parse '{}' as f64: {}", n, e)),
-                    },
-                    Token::Number(ref n) => match n.parse::<i64>() {
-                        Ok(n) => Ok(Value::Long(n)),
-                        Err(e) => parser_err!(format!("Could not parse '{}' as i64: {}", n, e)),
-                    },
-                    Token::SingleQuotedString(ref s) => {
-                        Ok(Value::SingleQuotedString(s.to_string()))
+            Some(t) => match t {
+                Token::SQLWord(k) => match k.keyword.as_ref() {
+                    "TRUE" => Ok(Value::Boolean(true)),
+                    "FALSE" => Ok(Value::Boolean(false)),
+                    "NULL" => Ok(Value::Null),
+                    _ => {
+                        return parser_err!(format!("No value parser for keyword {}", k.keyword));
                     }
-                    Token::NationalStringLiteral(ref s) => {
-                        Ok(Value::NationalStringLiteral(s.to_string()))
-                    }
-                    _ => parser_err!(format!("Unsupported value: {:?}", t)),
+                },
+                Token::Number(ref n) if n.contains('.') => match n.parse::<f64>() {
+                    Ok(n) => Ok(Value::Double(n)),
+                    Err(e) => parser_err!(format!("Could not parse '{}' as f64: {}", n, e)),
+                },
+                Token::Number(ref n) => match n.parse::<i64>() {
+                    Ok(n) => Ok(Value::Long(n)),
+                    Err(e) => parser_err!(format!("Could not parse '{}' as i64: {}", n, e)),
+                },
+                Token::SingleQuotedString(ref s) => Ok(Value::SingleQuotedString(s.to_string())),
+                Token::NationalStringLiteral(ref s) => {
+                    Ok(Value::NationalStringLiteral(s.to_string()))
                 }
-            }
+                _ => parser_err!(format!("Unsupported value: {:?}", t)),
+            },
             None => parser_err!("Expecting a value, but found EOF"),
         }
     }
@@ -1080,86 +1073,6 @@ impl Parser {
             Some(Token::SingleQuotedString(ref s)) => Ok(s.clone()),
             other => parser_err!(format!("Expected literal string, found {:?}", other)),
         }
-    }
-
-    pub fn parse_timezone_offset(&mut self) -> Result<i8, ParserError> {
-        match self.next_token() {
-            Some(Token::Plus) => {
-                let n = self.parse_literal_int()?;
-                Ok(n as i8)
-            }
-            Some(Token::Minus) => {
-                let n = self.parse_literal_int()?;
-                Ok(-n as i8)
-            }
-            other => parser_err!(format!(
-                "Expecting `+` or `-` in timezone, but found {:?}",
-                other
-            )),
-        }
-    }
-
-    pub fn parse_timestamp_value(&mut self) -> Result<Value, ParserError> {
-        let year = self.parse_literal_int()?;
-        let date = self.parse_date(year)?;
-        if let Ok(time) = self.parse_time() {
-            let date_time = NaiveDateTime::new(date, time);
-            match self.peek_token() {
-                Some(token) => match token {
-                    Token::Plus | Token::Minus => {
-                        let tz = self.parse_timezone_offset()?;
-                        let offset = FixedOffset::east(i32::from(tz) * 3600);
-                        Ok(Value::Timestamp(DateTime::from_utc(date_time, offset)))
-                    }
-                    _ => Ok(Value::DateTime(date_time)),
-                },
-                _ => Ok(Value::DateTime(date_time)),
-            }
-        } else {
-            parser_err!(format!(
-                "Expecting time after date, but found {:?}",
-                self.peek_token()
-            ))
-        }
-    }
-
-    pub fn parse_date(&mut self, year: i64) -> Result<NaiveDate, ParserError> {
-        if self.consume_token(&Token::Minus) {
-            let month = self.parse_literal_int()?;
-            if self.consume_token(&Token::Minus) {
-                let day = self.parse_literal_int()?;
-                let date = NaiveDate::from_ymd(year as i32, month as u32, day as u32);
-                Ok(date)
-            } else {
-                parser_err!(format!(
-                    "Expecting `-` for date separator, found {:?}",
-                    self.peek_token()
-                ))
-            }
-        } else {
-            parser_err!(format!(
-                "Expecting `-` for date separator, found {:?}",
-                self.peek_token()
-            ))
-        }
-    }
-
-    pub fn parse_time(&mut self) -> Result<NaiveTime, ParserError> {
-        let hour = self.parse_literal_int()?;
-        self.expect_token(&Token::Colon)?;
-        let min = self.parse_literal_int()?;
-        self.expect_token(&Token::Colon)?;
-        // On one hand, the SQL specs defines <seconds fraction> ::= <unsigned integer>,
-        // so it would be more correct to parse it as such
-        let sec = self.parse_literal_double()?;
-        // On the other, chrono only supports nanoseconds, which should(?) fit in seconds-as-f64...
-        let nanos = (sec.fract() * 1_000_000_000.0).round();
-        Ok(NaiveTime::from_hms_nano(
-            hour as u32,
-            min as u32,
-            sec as u32,
-            nanos as u32,
-        ))
     }
 
     /// Parse a SQL datatype (in the context of a CREATE TABLE statement for example)
@@ -1303,9 +1216,20 @@ impl Parser {
         }
     }
 
-    /// Parse a comma-separated list of unqualified, possibly quoted identifiers
-    pub fn parse_column_names(&mut self) -> Result<Vec<SQLIdent>, ParserError> {
-        Ok(self.parse_list_of_ids(&Token::Comma)?)
+    /// Parse a parenthesized comma-separated list of unqualified, possibly quoted identifiers
+    pub fn parse_parenthesized_column_list(
+        &mut self,
+        optional: IsOptional,
+    ) -> Result<Vec<SQLIdent>, ParserError> {
+        if self.consume_token(&Token::LParen) {
+            let cols = self.parse_list_of_ids(&Token::Comma)?;
+            self.expect_token(&Token::RParen)?;
+            Ok(cols)
+        } else if optional == Optional {
+            Ok(vec![])
+        } else {
+            self.expected("a list of columns in parentheses", self.peek_token())
+        }
     }
 
     pub fn parse_precision(&mut self) -> Result<usize, ParserError> {
@@ -1396,12 +1320,13 @@ impl Parser {
         let mut cte = vec![];
         loop {
             let alias = self.parse_identifier()?;
-            // TODO: Optional `( <column list> )`
+            let renamed_columns = self.parse_parenthesized_column_list(Optional)?;
             self.expect_keyword("AS")?;
             self.expect_token(&Token::LParen)?;
             cte.push(Cte {
                 alias,
                 query: self.parse_query()?,
+                renamed_columns,
             });
             self.expect_token(&Token::RParen)?;
             if !self.consume_token(&Token::Comma) {
@@ -1555,10 +1480,8 @@ impl Parser {
             let constraint = self.parse_expr()?;
             Ok(JoinConstraint::On(constraint))
         } else if self.parse_keyword("USING") {
-            self.expect_token(&Token::LParen)?;
-            let attributes = self.parse_column_names()?;
-            self.expect_token(&Token::RParen)?;
-            Ok(JoinConstraint::Using(attributes))
+            let columns = self.parse_parenthesized_column_list(Mandatory)?;
+            Ok(JoinConstraint::Using(columns))
         } else {
             self.expected("ON, or USING after JOIN", self.peek_token())
         }
@@ -1658,13 +1581,7 @@ impl Parser {
     pub fn parse_insert(&mut self) -> Result<SQLStatement, ParserError> {
         self.expect_keyword("INTO")?;
         let table_name = self.parse_object_name()?;
-        let columns = if self.consume_token(&Token::LParen) {
-            let column_names = self.parse_column_names()?;
-            self.expect_token(&Token::RParen)?;
-            column_names
-        } else {
-            vec![]
-        };
+        let columns = self.parse_parenthesized_column_list(Optional)?;
         self.expect_keyword("VALUES")?;
         self.expect_token(&Token::LParen)?;
         let values = self.parse_expr_list()?;
@@ -1766,5 +1683,25 @@ impl Parser {
 impl SQLWord {
     pub fn as_sql_ident(&self) -> SQLIdent {
         self.to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_utils::all_dialects;
+
+    #[test]
+    fn test_prev_index() {
+        let sql = "SELECT version()";
+        all_dialects().run_parser_method(sql, |parser| {
+            assert_eq!(parser.prev_token(), None);
+            assert_eq!(parser.next_token(), Some(Token::make_keyword("SELECT")));
+            assert_eq!(parser.next_token(), Some(Token::make_word("version", None)));
+            assert_eq!(parser.prev_token(), Some(Token::make_word("version", None)));
+            assert_eq!(parser.peek_token(), Some(Token::make_word("version", None)));
+            assert_eq!(parser.prev_token(), Some(Token::make_keyword("SELECT")));
+            assert_eq!(parser.prev_token(), None);
+        });
     }
 }

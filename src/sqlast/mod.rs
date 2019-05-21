@@ -47,8 +47,11 @@ fn comma_separated_string<T: ToString>(vec: &[T]) -> String {
 /// Identifier name, in the originally quoted form (e.g. `"id"`)
 pub type SQLIdent = String;
 
-/// Represents a parsed SQL expression, which is a common building
-/// block of SQL statements (the part after SELECT, WHERE, etc.)
+/// An SQL expression of any type.
+///
+/// The parser does not distinguish between expressions of different types
+/// (e.g. boolean vs string), so the caller must handle expressions of
+/// inappropriate type, like `WHERE 1` or `SELECT 1=1`, as necessary.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ASTNode {
     /// Identifier e.g. table name or column name
@@ -78,7 +81,7 @@ pub enum ASTNode {
         subquery: Box<SQLQuery>,
         negated: bool,
     },
-    /// <expr> [ NOT ] BETWEEN <low> AND <high>
+    /// `<expr> [ NOT ] BETWEEN <low> AND <high>`
     SQLBetween {
         expr: Box<ASTNode>,
         negated: bool,
@@ -95,6 +98,11 @@ pub enum ASTNode {
     SQLCast {
         expr: Box<ASTNode>,
         data_type: SQLType,
+    },
+    /// `expr COLLATE collation`
+    SQLCollate {
+        expr: Box<ASTNode>,
+        collation: SQLObjectName,
     },
     /// Nested expression e.g. `(foo > bar)` or `(1)`
     SQLNested(Box<ASTNode>),
@@ -177,6 +185,11 @@ impl ToString for ASTNode {
                 "CAST({} AS {})",
                 expr.as_ref().to_string(),
                 data_type.to_string()
+            ),
+            ASTNode::SQLCollate { expr, collation } => format!(
+                "{} COLLATE {}",
+                expr.as_ref().to_string(),
+                collation.to_string()
             ),
             ASTNode::SQLNested(ast) => format!("({})", ast.as_ref().to_string()),
             ASTNode::SQLUnary { operator, expr } => {

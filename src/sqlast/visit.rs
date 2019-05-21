@@ -175,6 +175,10 @@ pub trait Visit<'ast> {
         visit_cast(self, expr, data_type)
     }
 
+    fn visit_collate(&mut self, expr: &'ast ASTNode, collation: &'ast SQLObjectName) {
+        visit_collate(self, expr, collation)
+    }
+
     fn visit_nested(&mut self, expr: &'ast ASTNode) {
         visit_nested(self, expr)
     }
@@ -643,6 +647,7 @@ pub fn visit_expr<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, expr: &'ast AS
         } => visitor.visit_between(expr, low, high, *negated),
         ASTNode::SQLBinaryExpr { left, op, right } => visitor.visit_binary_expr(left, op, right),
         ASTNode::SQLCast { expr, data_type } => visitor.visit_cast(expr, data_type),
+        ASTNode::SQLCollate { expr, collation } => visitor.visit_collate(expr, collation),
         ASTNode::SQLNested(expr) => visitor.visit_nested(expr),
         ASTNode::SQLUnary { expr, operator } => visitor.visit_unary(expr, operator),
         ASTNode::SQLValue(val) => visitor.visit_value(val),
@@ -767,6 +772,11 @@ pub fn visit_cast<'ast, V: Visit<'ast> + ?Sized>(
 ) {
     visitor.visit_expr(expr);
     visitor.visit_type(data_type);
+}
+
+pub fn visit_collate<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, expr: &'ast ASTNode, collation: &'ast SQLObjectName) {
+    visitor.visit_expr(expr);
+    visitor.visit_object_name(collation);
 }
 
 pub fn visit_nested<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, expr: &'ast ASTNode) {
