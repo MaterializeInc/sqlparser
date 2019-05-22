@@ -175,6 +175,10 @@ pub trait Visit<'ast> {
         visit_cast(self, expr, data_type)
     }
 
+    fn visit_collate(&mut self, expr: &'ast ASTNode, collation: &'ast SQLObjectName) {
+        visit_collate(self, expr, collation)
+    }
+
     fn visit_nested(&mut self, expr: &'ast ASTNode) {
         visit_nested(self, expr)
     }
@@ -274,12 +278,23 @@ pub trait Visit<'ast> {
         name: &'ast SQLObjectName,
         url: &'ast String,
         schema: &'ast DataSourceSchema,
+        with_options: &'ast Vec<SQLOption>,
     ) {
-        visit_create_data_source(self, name, url, schema)
+        visit_create_data_source(self, name, url, schema, with_options)
     }
 
     fn visit_data_source_schema(&mut self, data_source_schema: &'ast DataSourceSchema) {
         visit_data_source_schema(self, data_source_schema)
+    }
+
+    fn visit_create_data_sink(
+        &mut self,
+        name: &'ast SQLObjectName,
+        from: &'ast SQLObjectName,
+        url: &'ast String,
+        with_options: &'ast Vec<SQLOption>,
+    ) {
+        visit_create_data_sink(self, name, from, url, with_options)
     }
 
     fn visit_literal_string(&mut self, _string: &'ast String) {}
@@ -289,19 +304,21 @@ pub trait Visit<'ast> {
         name: &'ast SQLObjectName,
         query: &'ast SQLQuery,
         materialized: bool,
+        with_options: &'ast Vec<SQLOption>,
     ) {
-        visit_create_view(self, name, query, materialized)
+        visit_create_view(self, name, query, materialized, with_options)
     }
 
     fn visit_create_table(
         &mut self,
         name: &'ast SQLObjectName,
         columns: &'ast Vec<SQLColumnDef>,
+        with_options: &'ast Vec<SQLOption>,
         external: bool,
         file_format: &'ast Option<FileFormat>,
         location: &'ast Option<String>,
     ) {
-        visit_create_table(self, name, columns, external, file_format, location)
+        visit_create_table(self, name, columns, with_options, external, file_format, location)
     }
 
     fn visit_column_def(&mut self, column_def: &'ast SQLColumnDef) {
@@ -313,6 +330,10 @@ pub trait Visit<'ast> {
     }
 
     fn visit_file_format(&mut self, _file_format: &'ast FileFormat) {}
+
+    fn visit_option(&mut self, option: &'ast SQLOption) {
+        visit_option(self, option)
+    }
 
     fn visit_drop(&mut self, drop: &'ast SQLDrop) {
         visit_drop(self, drop)
@@ -393,14 +414,18 @@ pub fn visit_statement<'ast, V: Visit<'ast> + ?Sized>(
             table_name,
             selection,
         } => visitor.visit_delete(table_name, selection.as_ref()),
-        SQLStatement::SQLCreateDataSource { name, url, schema } => {
-            visitor.visit_create_data_source(name, url, schema)
+        SQLStatement::SQLCreateDataSource { name, url, schema, with_options } => {
+            visitor.visit_create_data_source(name, url, schema, with_options)
+        }
+        SQLStatement::SQLCreateDataSink { name, from, url, with_options } => {
+            visitor.visit_create_data_sink(name, from, url, with_options)
         }
         SQLStatement::SQLCreateView {
             name,
             query,
             materialized,
-        } => visitor.visit_create_view(name, query, *materialized),
+            with_options,
+        } => visitor.visit_create_view(name, query, *materialized, with_options),
         SQLStatement::SQLDropTable(drop) => visitor.visit_drop(drop),
         SQLStatement::SQLDropDataSource(drop) => visitor.visit_drop(drop),
         SQLStatement::SQLDropView(drop) => visitor.visit_drop(drop),
@@ -408,9 +433,10 @@ pub fn visit_statement<'ast, V: Visit<'ast> + ?Sized>(
             name,
             columns,
             external,
+            with_options,
             file_format,
             location,
-        } => visitor.visit_create_table(name, columns, *external, file_format, location),
+        } => visitor.visit_create_table(name, columns, with_options, *external, file_format, location),
         SQLStatement::SQLAlterTable { name, operation } => {
             visitor.visit_alter_table(name, operation)
         }
@@ -643,6 +669,7 @@ pub fn visit_expr<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, expr: &'ast AS
         } => visitor.visit_between(expr, low, high, *negated),
         ASTNode::SQLBinaryExpr { left, op, right } => visitor.visit_binary_expr(left, op, right),
         ASTNode::SQLCast { expr, data_type } => visitor.visit_cast(expr, data_type),
+        ASTNode::SQLCollate { expr, collation } => visitor.visit_collate(expr, collation),
         ASTNode::SQLNested(expr) => visitor.visit_nested(expr),
         ASTNode::SQLUnary { expr, operator } => visitor.visit_unary(expr, operator),
         ASTNode::SQLValue(val) => visitor.visit_value(val),
@@ -767,6 +794,11 @@ pub fn visit_cast<'ast, V: Visit<'ast> + ?Sized>(
 ) {
     visitor.visit_expr(expr);
     visitor.visit_type(data_type);
+}
+
+pub fn visit_collate<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, expr: &'ast ASTNode, collation: &'ast SQLObjectName) {
+    visitor.visit_expr(expr);
+    visitor.visit_object_name(collation);
 }
 
 pub fn visit_nested<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, expr: &'ast ASTNode) {
@@ -940,10 +972,14 @@ pub fn visit_create_data_source<'ast, V: Visit<'ast> + ?Sized>(
     name: &'ast SQLObjectName,
     url: &'ast String,
     schema: &'ast DataSourceSchema,
+    with_options: &'ast Vec<SQLOption>,
 ) {
     visitor.visit_object_name(name);
     visitor.visit_literal_string(url);
     visitor.visit_data_source_schema(schema);
+    for option in with_options {
+        visitor.visit_option(option);
+    }
 }
 
 fn visit_data_source_schema<'ast, V: Visit<'ast> + ?Sized>(
@@ -953,6 +989,21 @@ fn visit_data_source_schema<'ast, V: Visit<'ast> + ?Sized>(
     match data_source_schema {
         DataSourceSchema::Raw(schema) => visitor.visit_literal_string(schema),
         DataSourceSchema::Registry(url) => visitor.visit_literal_string(url),
+    }
+}
+
+pub fn visit_create_data_sink<'ast, V: Visit<'ast> + ?Sized>(
+    visitor: &mut V,
+    name: &'ast SQLObjectName,
+    from: &'ast SQLObjectName,
+    url: &'ast String,
+    with_options: &'ast Vec<SQLOption>,
+) {
+    visitor.visit_object_name(name);
+    visitor.visit_object_name(from);
+    visitor.visit_literal_string(url);
+    for option in with_options {
+        visitor.visit_option(option);
     }
 }
 
@@ -967,15 +1018,20 @@ pub fn visit_create_view<'ast, V: Visit<'ast> + ?Sized>(
     name: &'ast SQLObjectName,
     query: &'ast SQLQuery,
     _materialized: bool,
+    with_options: &'ast Vec<SQLOption>,
 ) {
     visitor.visit_object_name(name);
     visitor.visit_query(&query);
+    for option in with_options {
+        visitor.visit_option(option);
+    }
 }
 
 pub fn visit_create_table<'ast, V: Visit<'ast> + ?Sized>(
     visitor: &mut V,
     name: &'ast SQLObjectName,
     columns: &'ast Vec<SQLColumnDef>,
+    with_options: &'ast Vec<SQLOption>,
     _external: bool,
     file_format: &'ast Option<FileFormat>,
     location: &'ast Option<String>,
@@ -983,6 +1039,9 @@ pub fn visit_create_table<'ast, V: Visit<'ast> + ?Sized>(
     visitor.visit_object_name(name);
     for column in columns {
         visitor.visit_column_def(column);
+    }
+    for option in with_options {
+        visitor.visit_option(option);
     }
     if let Some(file_format) = file_format {
         visitor.visit_file_format(file_format);
@@ -1009,6 +1068,14 @@ pub fn visit_column_default<'ast, V: Visit<'ast> + ?Sized>(
         Some(expr) => visitor.visit_expr(expr),
         None => (),
     }
+}
+
+pub fn visit_option<'ast, V: Visit<'ast> + ?Sized>(
+    visitor: &mut V,
+    option: &'ast SQLOption,
+) {
+    visitor.visit_identifier(&option.name);
+    visitor.visit_value(&option.value);
 }
 
 pub fn visit_alter_table<'ast, V: Visit<'ast> + ?Sized>(
