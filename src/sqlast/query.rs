@@ -122,6 +122,7 @@ impl ToString for SQLSetOperator {
 /// to a set operation like `UNION`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SQLSelect {
+    pub all: bool,
     pub distinct: bool,
     /// projection expressions
     pub projection: Vec<SQLSelectItem>,
@@ -140,7 +141,8 @@ pub struct SQLSelect {
 impl ToString for SQLSelect {
     fn to_string(&self) -> String {
         let mut s = format!(
-            "SELECT{} {}",
+            "SELECT{}{} {}",
+            if self.all { " ALL" } else { "" },
             if self.distinct { " DISTINCT" } else { "" },
             comma_separated_string(&self.projection)
         );

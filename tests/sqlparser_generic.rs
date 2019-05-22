@@ -84,6 +84,26 @@ fn parse_select_distinct() {
 }
 
 #[test]
+fn parse_select_all() {
+    let sql = "SELECT ALL name FROM customer";
+    let select = verified_only_select(sql);
+    assert_eq!(false, select.distinct);
+    assert_eq!(
+        &SQLSelectItem::UnnamedExpression(ASTNode::SQLIdentifier("name".to_string())),
+        only(&select.projection)
+    );
+}
+
+#[test]
+fn parse_select_all_distinct() {
+    let result = parse_sql_statements("SELECT ALL DISTINCT name FROM customer");
+    assert_eq!(
+        ParserError::ParserError("Cannot specify both ALL and DISTINCT in SELECT".to_string()),
+        result.unwrap_err(),
+    );
+}
+
+#[test]
 fn parse_select_wildcard() {
     let sql = "SELECT * FROM foo";
     let select = verified_only_select(sql);
