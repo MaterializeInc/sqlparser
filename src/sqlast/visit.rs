@@ -194,8 +194,10 @@ pub trait Visit<'ast> {
         name: &'ast SQLObjectName,
         args: &'ast Vec<ASTNode>,
         over: Option<&'ast SQLWindowSpec>,
+        all: bool,
+        distinct: bool,
     ) {
-        visit_function(self, name, args, over)
+        visit_function(self, name, args, over, all, distinct)
     }
 
     fn visit_window_spec(&mut self, window_spec: &'ast SQLWindowSpec) {
@@ -673,9 +675,13 @@ pub fn visit_expr<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, expr: &'ast AS
         ASTNode::SQLNested(expr) => visitor.visit_nested(expr),
         ASTNode::SQLUnary { expr, operator } => visitor.visit_unary(expr, operator),
         ASTNode::SQLValue(val) => visitor.visit_value(val),
-        ASTNode::SQLFunction { name, args, over } => {
-            visitor.visit_function(name, args, over.as_ref())
-        }
+        ASTNode::SQLFunction {
+            name,
+            args,
+            over,
+            all,
+            distinct,
+        } => visitor.visit_function(name, args, over.as_ref(), *all, *distinct),
         ASTNode::SQLCase {
             operand,
             conditions,
@@ -819,6 +825,8 @@ pub fn visit_function<'ast, V: Visit<'ast> + ?Sized>(
     name: &'ast SQLObjectName,
     args: &'ast Vec<ASTNode>,
     over: Option<&'ast SQLWindowSpec>,
+    _all: bool,
+    _distinct: bool,
 ) {
     visitor.visit_object_name(name);
     for arg in args {

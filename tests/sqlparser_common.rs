@@ -236,6 +236,27 @@ fn parse_select_count_wildcard() {
             name: SQLObjectName(vec!["COUNT".to_string()]),
             args: vec![ASTNode::SQLWildcard],
             over: None,
+            distinct: false,
+            all: false,
+        },
+        expr_from_projection(only(&select.projection))
+    );
+}
+
+#[test]
+fn parse_select_count_distinct() {
+    let sql = "SELECT COUNT(DISTINCT + x) FROM customer";
+    let select = verified_only_select(sql);
+    assert_eq!(
+        &ASTNode::SQLFunction {
+            name: SQLObjectName(vec!["COUNT".to_string()]),
+            args: vec![ASTNode::SQLUnary {
+                operator: SQLOperator::Plus,
+                expr: Box::new(ASTNode::SQLIdentifier("x".to_string()))
+            }],
+            over: None,
+            distinct: true,
+            all: false,
         },
         expr_from_projection(only(&select.projection))
     );
@@ -714,6 +735,8 @@ fn parse_scalar_function_in_projection() {
             name: SQLObjectName(vec!["sqrt".to_string()]),
             args: vec![ASTNode::SQLIdentifier("id".to_string())],
             over: None,
+            all: false,
+            distinct: false,
         },
         expr_from_projection(only(&select.projection))
     );
@@ -742,7 +765,9 @@ fn parse_window_functions() {
                     asc: Some(false)
                 }],
                 window_frame: None,
-            })
+            }),
+            all: false,
+            distinct: false,
         },
         expr_from_projection(&select.projection[0])
     );
@@ -814,6 +839,8 @@ fn parse_delimited_identifiers() {
             name: SQLObjectName(vec![r#""myfun""#.to_string()]),
             args: vec![],
             over: None,
+            all: false,
+            distinct: false,
         },
         expr_from_projection(&select.projection[1]),
     );

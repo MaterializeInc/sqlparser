@@ -118,6 +118,9 @@ pub enum ASTNode {
         name: SQLObjectName,
         args: Vec<ASTNode>,
         over: Option<SQLWindowSpec>,
+        // aggregate functions may specify eg `COUNT(DISTINCT x)`
+        all: bool,
+        distinct: bool,
     },
     /// CASE [<operand>] WHEN <condition> THEN <result> ... [ELSE <result>] END
     /// Note we only recognize a complete single expression as <condition>, not
@@ -196,8 +199,20 @@ impl ToString for ASTNode {
                 format!("{} {}", operator.to_string(), expr.as_ref().to_string())
             }
             ASTNode::SQLValue(v) => v.to_string(),
-            ASTNode::SQLFunction { name, args, over } => {
-                let mut s = format!("{}({})", name.to_string(), comma_separated_string(args));
+            ASTNode::SQLFunction {
+                name,
+                args,
+                over,
+                all,
+                distinct,
+            } => {
+                let mut s = format!(
+                    "{}({}{}{})",
+                    name.to_string(),
+                    if *all { "ALL " } else { "" },
+                    if *distinct { "DISTINCT " } else { "" },
+                    comma_separated_string(args)
+                );
                 if let Some(o) = over {
                     s += &format!(" OVER ({})", o.to_string())
                 }

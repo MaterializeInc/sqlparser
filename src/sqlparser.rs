@@ -281,6 +281,14 @@ impl Parser {
 
     pub fn parse_function(&mut self, name: SQLObjectName) -> Result<ASTNode, ParserError> {
         self.expect_token(&Token::LParen)?;
+        let all = self.parse_keyword("ALL");
+        let distinct = self.parse_keyword("DISTINCT");
+        if all && distinct {
+            return parser_err!(format!(
+                "Cannot specify both ALL and DISTINCT in function: {:?}",
+                name
+            ));
+        }
         let args = self.parse_optional_args()?;
         let over = if self.parse_keyword("OVER") {
             // TBD: support window names (`OVER mywin`) in place of inline specification
@@ -307,7 +315,13 @@ impl Parser {
             None
         };
 
-        Ok(ASTNode::SQLFunction { name, args, over })
+        Ok(ASTNode::SQLFunction {
+            name,
+            args,
+            over,
+            all,
+            distinct,
+        })
     }
 
     pub fn parse_window_frame(&mut self) -> Result<Option<SQLWindowFrame>, ParserError> {
