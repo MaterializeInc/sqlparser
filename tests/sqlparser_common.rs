@@ -638,13 +638,20 @@ fn parse_create_table() {
 fn parse_create_table_with_options() {
     let sql = "CREATE TABLE t (c int) WITH (foo = 'bar', a = 123)";
     match verified_stmt(sql) {
-        SQLStatement::SQLCreateTable {
-            with_options, ..
-        } => {
-            assert_eq!(vec![
-                SQLOption { name: "foo".into(), value: Value::SingleQuotedString("bar".into()) },
-                SQLOption { name: "a".into(), value: Value::Long(123) },
-            ], with_options);
+        SQLStatement::SQLCreateTable { with_options, .. } => {
+            assert_eq!(
+                vec![
+                    SQLOption {
+                        name: "foo".into(),
+                        value: Value::SingleQuotedString("bar".into())
+                    },
+                    SQLOption {
+                        name: "a".into(),
+                        value: Value::Long(123)
+                    },
+                ],
+                with_options
+            );
         }
         _ => unreachable!(),
     }
@@ -1268,13 +1275,20 @@ fn parse_create_view() {
 fn parse_create_view_with_options() {
     let sql = "CREATE VIEW v WITH (foo = 'bar', a = 123) AS SELECT 1";
     match verified_stmt(sql) {
-        SQLStatement::SQLCreateView {
-            with_options, ..
-        } => {
-            assert_eq!(vec![
-                SQLOption { name: "foo".into(), value: Value::SingleQuotedString("bar".into()) },
-                SQLOption { name: "a".into(), value: Value::Long(123) },
-            ], with_options);
+        SQLStatement::SQLCreateView { with_options, .. } => {
+            assert_eq!(
+                vec![
+                    SQLOption {
+                        name: "foo".into(),
+                        value: Value::SingleQuotedString("bar".into())
+                    },
+                    SQLOption {
+                        name: "a".into(),
+                        value: Value::Long(123)
+                    },
+                ],
+                with_options
+            );
         }
         _ => unreachable!(),
     }
@@ -1303,13 +1317,22 @@ fn parse_create_materialized_view() {
 fn parse_create_data_source_raw_schema() {
     let sql = "CREATE DATA SOURCE foo FROM 'bar' USING SCHEMA 'baz' WITH (name = 'val')";
     match verified_stmt(sql) {
-        SQLStatement::SQLCreateDataSource { name, url, schema, with_options } => {
+        SQLStatement::SQLCreateDataSource {
+            name,
+            url,
+            schema,
+            with_options,
+        } => {
             assert_eq!("foo", name.to_string());
             assert_eq!("bar", url);
             assert_eq!(DataSourceSchema::Raw("baz".into()), schema);
-            assert_eq!(with_options, vec![
-                SQLOption { name: "name".into(), value: Value::SingleQuotedString("val".into()) },
-            ]);
+            assert_eq!(
+                with_options,
+                vec![SQLOption {
+                    name: "name".into(),
+                    value: Value::SingleQuotedString("val".into())
+                },]
+            );
         }
         _ => assert!(false),
     }
@@ -1319,10 +1342,18 @@ fn parse_create_data_source_raw_schema() {
 fn parse_create_data_source_registry() {
     let sql = "CREATE DATA SOURCE foo FROM 'bar' USING SCHEMA REGISTRY 'http://localhost:8081'";
     match verified_stmt(sql) {
-        SQLStatement::SQLCreateDataSource { name, url, schema, with_options } => {
+        SQLStatement::SQLCreateDataSource {
+            name,
+            url,
+            schema,
+            with_options,
+        } => {
             assert_eq!("foo", name.to_string());
             assert_eq!("bar", url);
-            assert_eq!(DataSourceSchema::Registry("http://localhost:8081".into()), schema);
+            assert_eq!(
+                DataSourceSchema::Registry("http://localhost:8081".into()),
+                schema
+            );
             assert_eq!(with_options, vec![]);
         }
         _ => assert!(false),
@@ -1333,13 +1364,22 @@ fn parse_create_data_source_registry() {
 fn parse_create_data_sink() {
     let sql = "CREATE DATA SINK foo FROM bar INTO 'baz' WITH (name = 'val')";
     match verified_stmt(sql) {
-        SQLStatement::SQLCreateDataSink { name, from, url, with_options } => {
+        SQLStatement::SQLCreateDataSink {
+            name,
+            from,
+            url,
+            with_options,
+        } => {
             assert_eq!("foo", name.to_string());
             assert_eq!("bar", from.to_string());
             assert_eq!("baz", url);
-            assert_eq!(with_options, vec![
-                SQLOption { name: "name".into(), value: Value::SingleQuotedString("val".into()) },
-            ]);
+            assert_eq!(
+                with_options,
+                vec![SQLOption {
+                    name: "name".into(),
+                    value: Value::SingleQuotedString("val".into())
+                },]
+            );
         }
         _ => assert!(false),
     }
@@ -1453,7 +1493,9 @@ fn parse_invalid_subquery_without_parens() {
 
 #[test]
 fn parse_invalid_infix_not() {
-    let res = parse_sql_statements("SELECT col1 FROM tab2 AS coz0 WHERE NOT + colNG NOT ( NULL INSERTULL");
+    let res = parse_sql_statements(
+        "SELECT col1 FROM tab2 AS coz0 WHERE NOT + colNG NOT ( NULL INSERTULL",
+    );
     assert_eq!(
         ParserError::ParserError("Expected IN or BETWEEN after NOT, found: (".to_string()),
         res.unwrap_err(),

@@ -740,8 +740,10 @@ impl Parser {
             } else if self.parse_keyword("SINK") {
                 self.parse_create_data_sink()
             } else {
-                parser_err!(format!("Expected SOURCE or SINK after CREATE DATA, found: {:?}",
-                    self.peek_token()))
+                parser_err!(format!(
+                    "Expected SOURCE or SINK after CREATE DATA, found: {:?}",
+                    self.peek_token()
+                ))
             }
         } else if self.parse_keyword("EXTERNAL") {
             self.parse_create_external_table()
@@ -765,7 +767,12 @@ impl Parser {
         if self.parse_keyword("WITH") {
             with_options = self.parse_with_options()?;
         }
-        Ok(SQLStatement::SQLCreateDataSource { name, url, schema, with_options })
+        Ok(SQLStatement::SQLCreateDataSource {
+            name,
+            url,
+            schema,
+            with_options,
+        })
     }
 
     pub fn parse_create_data_sink(&mut self) -> Result<SQLStatement, ParserError> {
@@ -778,7 +785,12 @@ impl Parser {
         if self.parse_keyword("WITH") {
             with_options = self.parse_with_options()?;
         }
-        Ok(SQLStatement::SQLCreateDataSink { name, from, url, with_options })
+        Ok(SQLStatement::SQLCreateDataSink {
+            name,
+            from,
+            url,
+            with_options,
+        })
     }
 
     pub fn parse_create_external_table(&mut self) -> Result<SQLStatement, ParserError> {

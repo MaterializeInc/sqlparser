@@ -518,7 +518,12 @@ impl ToString for SQLStatement {
                 }
                 s
             }
-            SQLStatement::SQLCreateDataSource { name, url, schema, with_options } => {
+            SQLStatement::SQLCreateDataSource {
+                name,
+                url,
+                schema,
+                with_options,
+            } => {
                 let with_options = if !with_options.is_empty() {
                     format!(" WITH ({})", comma_separated_string(with_options))
                 } else {
@@ -532,14 +537,20 @@ impl ToString for SQLStatement {
                         DataSourceSchema::Raw(schema) => {
                             Value::SingleQuotedString(schema.clone()).to_string()
                         }
-                        DataSourceSchema::Registry(url) => {
-                            format!("REGISTRY {}", Value::SingleQuotedString(url.clone()).to_string())
-                        }
+                        DataSourceSchema::Registry(url) => format!(
+                            "REGISTRY {}",
+                            Value::SingleQuotedString(url.clone()).to_string()
+                        ),
                     },
                     with_options
                 )
             }
-            SQLStatement::SQLCreateDataSink { name, from, url, with_options } => {
+            SQLStatement::SQLCreateDataSink {
+                name,
+                from,
+                url,
+                with_options,
+            } => {
                 let with_options = if !with_options.is_empty() {
                     format!(" WITH ({})", comma_separated_string(with_options))
                 } else {
@@ -587,7 +598,12 @@ impl ToString for SQLStatement {
                 file_format.as_ref().unwrap().to_string(),
                 location.as_ref().unwrap()
             ),
-            SQLStatement::SQLCreateTable { name, columns, with_options, .. } => {
+            SQLStatement::SQLCreateTable {
+                name,
+                columns,
+                with_options,
+                ..
+            } => {
                 let with_options = if !with_options.is_empty() {
                     format!(" WITH ({})", comma_separated_string(with_options))
                 } else {

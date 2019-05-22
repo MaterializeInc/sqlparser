@@ -320,7 +320,15 @@ pub trait Visit<'ast> {
         file_format: &'ast Option<FileFormat>,
         location: &'ast Option<String>,
     ) {
-        visit_create_table(self, name, columns, with_options, external, file_format, location)
+        visit_create_table(
+            self,
+            name,
+            columns,
+            with_options,
+            external,
+            file_format,
+            location,
+        )
     }
 
     fn visit_column_def(&mut self, column_def: &'ast SQLColumnDef) {
@@ -416,12 +424,18 @@ pub fn visit_statement<'ast, V: Visit<'ast> + ?Sized>(
             table_name,
             selection,
         } => visitor.visit_delete(table_name, selection.as_ref()),
-        SQLStatement::SQLCreateDataSource { name, url, schema, with_options } => {
-            visitor.visit_create_data_source(name, url, schema, with_options)
-        }
-        SQLStatement::SQLCreateDataSink { name, from, url, with_options } => {
-            visitor.visit_create_data_sink(name, from, url, with_options)
-        }
+        SQLStatement::SQLCreateDataSource {
+            name,
+            url,
+            schema,
+            with_options,
+        } => visitor.visit_create_data_source(name, url, schema, with_options),
+        SQLStatement::SQLCreateDataSink {
+            name,
+            from,
+            url,
+            with_options,
+        } => visitor.visit_create_data_sink(name, from, url, with_options),
         SQLStatement::SQLCreateView {
             name,
             query,
@@ -438,7 +452,14 @@ pub fn visit_statement<'ast, V: Visit<'ast> + ?Sized>(
             with_options,
             file_format,
             location,
-        } => visitor.visit_create_table(name, columns, with_options, *external, file_format, location),
+        } => visitor.visit_create_table(
+            name,
+            columns,
+            with_options,
+            *external,
+            file_format,
+            location,
+        ),
         SQLStatement::SQLAlterTable { name, operation } => {
             visitor.visit_alter_table(name, operation)
         }
@@ -802,7 +823,11 @@ pub fn visit_cast<'ast, V: Visit<'ast> + ?Sized>(
     visitor.visit_type(data_type);
 }
 
-pub fn visit_collate<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, expr: &'ast ASTNode, collation: &'ast SQLObjectName) {
+pub fn visit_collate<'ast, V: Visit<'ast> + ?Sized>(
+    visitor: &mut V,
+    expr: &'ast ASTNode,
+    collation: &'ast SQLObjectName,
+) {
     visitor.visit_expr(expr);
     visitor.visit_object_name(collation);
 }
@@ -1078,10 +1103,7 @@ pub fn visit_column_default<'ast, V: Visit<'ast> + ?Sized>(
     }
 }
 
-pub fn visit_option<'ast, V: Visit<'ast> + ?Sized>(
-    visitor: &mut V,
-    option: &'ast SQLOption,
-) {
+pub fn visit_option<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, option: &'ast SQLOption) {
     visitor.visit_identifier(&option.name);
     visitor.visit_value(&option.value);
 }
