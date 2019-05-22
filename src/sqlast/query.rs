@@ -28,7 +28,7 @@ pub struct SQLQuery {
     /// SELECT or UNION / EXCEPT / INTECEPT
     pub body: SQLSetExpr,
     /// ORDER BY
-    pub order_by: Option<Vec<SQLOrderByExpr>>,
+    pub order_by: Vec<SQLOrderByExpr>,
     /// LIMIT
     pub limit: Option<ASTNode>,
 }
@@ -40,8 +40,8 @@ impl ToString for SQLQuery {
             s += &format!("WITH {} ", comma_separated_string(&self.ctes))
         }
         s += &self.body.to_string();
-        if let Some(ref order_by) = self.order_by {
-            s += &format!(" ORDER BY {}", comma_separated_string(order_by));
+        if !self.order_by.is_empty() {
+            s += &format!(" ORDER BY {}", comma_separated_string(&self.order_by));
         }
         if let Some(ref limit) = self.limit {
             s += &format!(" LIMIT {}", limit.to_string());
@@ -214,7 +214,7 @@ pub enum TableFactor {
         /// Arguments of a table-valued function, as supported by Postgres
         /// and MSSQL. Note that deprecated MSSQL `FROM foo (NOLOCK)` syntax
         /// will also be parsed as `args`.
-        args: Option<Vec<ASTNode>>,
+        args: Vec<ASTNode>,
         /// MSSQL-specific `WITH (...)` hints such as NOLOCK.
         with_hints: Vec<ASTNode>,
     },
@@ -234,7 +234,7 @@ impl ToString for TableFactor {
                 with_hints,
             } => {
                 let mut s = name.to_string();
-                if let Some(args) = args {
+                if !args.is_empty() {
                     s += &format!("({})", comma_separated_string(args))
                 };
                 if let Some(alias) = alias {

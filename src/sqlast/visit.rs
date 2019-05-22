@@ -42,7 +42,7 @@ pub trait Visit<'ast> {
         &mut self,
         name: &'ast SQLObjectName,
         alias: Option<&'ast SQLIdent>,
-        args: Option<&'ast Vec<ASTNode>>,
+        args: &'ast Vec<ASTNode>,
         with_hints: &'ast Vec<ASTNode>,
     ) {
         visit_table_table_factor(self, name, alias, args, with_hints)
@@ -477,13 +477,8 @@ pub fn visit_query<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, query: &'ast 
         visitor.visit_cte(cte);
     }
     visitor.visit_set_expr(&query.body);
-    match query.order_by {
-        Some(ref order_bys) => {
-            for order_by in order_bys {
-                visitor.visit_order_by(order_by);
-            }
-        }
-        None => (),
+    for order_by in &query.order_by {
+        visitor.visit_order_by(order_by);
     }
     match query.limit {
         Some(ref expr) => visitor.visit_limit(expr),
@@ -546,7 +541,7 @@ pub fn visit_table_factor<'ast, V: Visit<'ast> + ?Sized>(
             alias,
             args,
             with_hints,
-        } => visitor.visit_table_table_factor(name, alias.as_ref(), args.as_ref(), with_hints),
+        } => visitor.visit_table_table_factor(name, alias.as_ref(), args, with_hints),
         TableFactor::Derived { subquery, alias } => {
             visitor.visit_derived_table_factor(subquery, alias.as_ref())
         }
@@ -557,17 +552,15 @@ pub fn visit_table_table_factor<'ast, V: Visit<'ast> + ?Sized>(
     visitor: &mut V,
     name: &'ast SQLObjectName,
     alias: Option<&'ast SQLIdent>,
-    args: Option<&'ast Vec<ASTNode>>,
+    args: &'ast Vec<ASTNode>,
     with_hints: &'ast Vec<ASTNode>,
 ) {
     visitor.visit_object_name(name);
     if let Some(ident) = alias {
         visitor.visit_identifier(ident);
     }
-    if let Some(args) = args {
-        for expr in args {
-            visitor.visit_expr(expr);
-        }
+    for expr in args {
+        visitor.visit_expr(expr);
     }
     for expr in with_hints {
         visitor.visit_expr(expr);
