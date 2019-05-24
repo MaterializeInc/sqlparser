@@ -451,6 +451,33 @@ fn parse_between() {
 }
 
 #[test]
+fn parse_between_with_expr() {
+    use self::ASTNode::*;
+    use self::SQLOperator::*;
+    let sql = "SELECT * FROM t WHERE 1 BETWEEN 1 + 2 AND 3 + 4 IS NULL";
+    let select = verified_only_select(sql);
+    let low = SQLBinaryExpr {
+        left: Box::new(ASTNode::SQLValue(Value::Long(1))),
+        op: Plus,
+        right: Box::new(ASTNode::SQLValue(Value::Long(2))),
+    };
+    let high = SQLBinaryExpr {
+        left: Box::new(ASTNode::SQLValue(Value::Long(3))),
+        op: Plus,
+        right: Box::new(ASTNode::SQLValue(Value::Long(4))),
+    };
+    assert_eq!(
+        ASTNode::SQLIsNull(Box::new(ASTNode::SQLBetween {
+            expr: Box::new(ASTNode::SQLValue(Value::Long(1))),
+            low: Box::new(low),
+            high: Box::new(high),
+            negated: false,
+        })),
+        select.selection.unwrap()
+    );
+}
+
+#[test]
 fn parse_select_order_by() {
     fn chk(sql: &str) {
         let select = verified_query(sql);
