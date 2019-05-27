@@ -232,13 +232,12 @@ fn parse_select_count_wildcard() {
     let sql = "SELECT COUNT(*) FROM customer";
     let select = verified_only_select(sql);
     assert_eq!(
-        &ASTNode::SQLFunction {
+        &ASTNode::SQLFunction(SQLFunction {
             name: SQLObjectName(vec!["COUNT".to_string()]),
             args: vec![ASTNode::SQLWildcard],
             over: None,
             distinct: false,
-            all: false,
-        },
+        }),
         expr_from_projection(only(&select.projection))
     );
 }
@@ -248,7 +247,7 @@ fn parse_select_count_distinct() {
     let sql = "SELECT COUNT(DISTINCT + x) FROM customer";
     let select = verified_only_select(sql);
     assert_eq!(
-        &ASTNode::SQLFunction {
+        &ASTNode::SQLFunction(SQLFunction {
             name: SQLObjectName(vec!["COUNT".to_string()]),
             args: vec![ASTNode::SQLUnary {
                 operator: SQLOperator::Plus,
@@ -256,8 +255,7 @@ fn parse_select_count_distinct() {
             }],
             over: None,
             distinct: true,
-            all: false,
-        },
+        }),
         expr_from_projection(only(&select.projection))
     );
 }
@@ -834,13 +832,12 @@ fn parse_scalar_function_in_projection() {
     let sql = "SELECT sqrt(id) FROM foo";
     let select = verified_only_select(sql);
     assert_eq!(
-        &ASTNode::SQLFunction {
+        &ASTNode::SQLFunction(SQLFunction {
             name: SQLObjectName(vec!["sqrt".to_string()]),
             args: vec![ASTNode::SQLIdentifier("id".to_string())],
             over: None,
-            all: false,
             distinct: false,
-        },
+        }),
         expr_from_projection(only(&select.projection))
     );
 }
@@ -858,7 +855,7 @@ fn parse_window_functions() {
     let select = verified_only_select(sql);
     assert_eq!(4, select.projection.len());
     assert_eq!(
-        &ASTNode::SQLFunction {
+        &ASTNode::SQLFunction(SQLFunction {
             name: SQLObjectName(vec!["row_number".to_string()]),
             args: vec![],
             over: Some(SQLWindowSpec {
@@ -869,9 +866,8 @@ fn parse_window_functions() {
                 }],
                 window_frame: None,
             }),
-            all: false,
             distinct: false,
-        },
+        }),
         expr_from_projection(&select.projection[0])
     );
 }
@@ -938,13 +934,12 @@ fn parse_delimited_identifiers() {
         expr_from_projection(&select.projection[0]),
     );
     assert_eq!(
-        &ASTNode::SQLFunction {
+        &ASTNode::SQLFunction(SQLFunction {
             name: SQLObjectName(vec![r#""myfun""#.to_string()]),
             args: vec![],
             over: None,
-            all: false,
             distinct: false,
-        },
+        }),
         expr_from_projection(&select.projection[1]),
     );
     match &select.projection[2] {

@@ -191,13 +191,9 @@ pub trait Visit<'ast> {
 
     fn visit_function(
         &mut self,
-        name: &'ast SQLObjectName,
-        args: &'ast Vec<ASTNode>,
-        over: Option<&'ast SQLWindowSpec>,
-        all: bool,
-        distinct: bool,
+        func: &'ast SQLFunction
     ) {
-        visit_function(self, name, args, over, all, distinct)
+        visit_function(self, func)
     }
 
     fn visit_window_spec(&mut self, window_spec: &'ast SQLWindowSpec) {
@@ -689,13 +685,7 @@ pub fn visit_expr<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, expr: &'ast AS
         ASTNode::SQLNested(expr) => visitor.visit_nested(expr),
         ASTNode::SQLUnary { expr, operator } => visitor.visit_unary(expr, operator),
         ASTNode::SQLValue(val) => visitor.visit_value(val),
-        ASTNode::SQLFunction {
-            name,
-            args,
-            over,
-            all,
-            distinct,
-        } => visitor.visit_function(name, args, over.as_ref(), *all, *distinct),
+        ASTNode::SQLFunction(func) => visitor.visit_function(func),
         ASTNode::SQLCase {
             operand,
             conditions,
@@ -840,17 +830,13 @@ pub fn visit_unary<'ast, V: Visit<'ast> + ?Sized>(
 
 pub fn visit_function<'ast, V: Visit<'ast> + ?Sized>(
     visitor: &mut V,
-    name: &'ast SQLObjectName,
-    args: &'ast Vec<ASTNode>,
-    over: Option<&'ast SQLWindowSpec>,
-    _all: bool,
-    _distinct: bool,
+    func: &'ast SQLFunction,
 ) {
-    visitor.visit_object_name(name);
-    for arg in args {
+    visitor.visit_object_name(&func.name);
+    for arg in &func.args {
         visitor.visit_expr(arg);
     }
-    if let Some(over) = over {
+    if let Some(over) = &func.over {
         visitor.visit_window_spec(over);
     }
 }
