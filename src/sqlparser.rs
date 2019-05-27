@@ -520,7 +520,7 @@ impl Parser {
 
     /// Parses `BETWEEN <low> AND <high>`, assuming the `BETWEEN` keyword was already consumed
     pub fn parse_between(&mut self, expr: ASTNode, negated: bool) -> Result<ASTNode, ParserError> {
-        let prec = self.get_precedence(&Token::make_keyword("AND"))?;
+        let prec = self.get_precedence(&Token::make_keyword("BETWEEN"))?;
         let low = self.parse_subexpr(prec)?;
         self.expect_keyword("AND")?;
         let high = self.parse_subexpr(prec)?;
