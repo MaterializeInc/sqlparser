@@ -19,7 +19,7 @@
 
 use super::{SQLIdent, SQLObjectName};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Hash)]
 pub enum AlterOperation {
     AddConstraint(TableKey),
     RemoveConstraint { name: SQLIdent },
@@ -36,13 +36,13 @@ impl ToString for AlterOperation {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Hash)]
 pub struct Key {
     pub name: SQLIdent,
     pub columns: Vec<SQLIdent>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Hash)]
 pub enum TableKey {
     PrimaryKey(Key),
     UniqueKey(Key),

@@ -18,7 +18,7 @@
 // is not licensed under the terms of the above license.
 
 /// SQL Operator
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Hash)]
 pub enum SQLOperator {
     Plus,
     Minus,

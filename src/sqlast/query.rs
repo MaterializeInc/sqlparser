@@ -21,7 +21,7 @@ use super::*;
 
 /// The most complete variant of a `SELECT` query expression, optionally
 /// including `WITH`, `UNION` / other set operations, and `ORDER BY`.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Hash)]
 pub struct SQLQuery {
     /// WITH (common table expressions, or CTEs)
     pub ctes: Vec<Cte>,
@@ -52,7 +52,7 @@ impl ToString for SQLQuery {
 
 /// A node in a tree, representing a "query body" expression, roughly:
 /// `SELECT ... [ {UNION|EXCEPT|INTERSECT} SELECT ...]`
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Hash)]
 pub enum SQLSetExpr {
     /// Restricted SELECT .. FROM .. HAVING (no ORDER BY or set operations)
     Select(Box<SQLSelect>),
@@ -93,7 +93,7 @@ impl ToString for SQLSetExpr {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Hash)]
 pub enum SQLSetOperator {
     Union,
     Except,
@@ -113,7 +113,7 @@ impl ToString for SQLSetOperator {
 /// A restricted variant of `SELECT` (without CTEs/`ORDER BY`), which may
 /// appear either as the only body item of an `SQLQuery`, or as an operand
 /// to a set operation like `UNION`.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Hash)]
 pub struct SQLSelect {
     pub all: bool,
     pub distinct: bool,
@@ -162,7 +162,7 @@ impl ToString for SQLSelect {
 /// The names in the column list before `AS`, when specified, replace the names
 /// of the columns returned by the query. The parser does not validate that the
 /// number of columns in the query matches the number of columns in the query.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Hash)]
 pub struct Cte {
     pub alias: SQLIdent,
     pub query: SQLQuery,
@@ -180,7 +180,7 @@ impl ToString for Cte {
 }
 
 /// One item of the comma-separated list following `SELECT`
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Hash)]
 pub enum SQLSelectItem {
     /// Any expression, not followed by `[ AS ] alias`
     UnnamedExpression(ASTNode),
@@ -206,7 +206,7 @@ impl ToString for SQLSelectItem {
 }
 
 /// A table name or a parenthesized subquery with an optional alias
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Hash)]
 pub enum TableFactor {
     Table {
         name: SQLObjectName,
@@ -256,7 +256,7 @@ impl ToString for TableFactor {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Hash)]
 pub struct Join {
     pub relation: TableFactor,
     pub join_operator: JoinOperator,
@@ -308,7 +308,7 @@ impl ToString for Join {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Hash)]
 pub enum JoinOperator {
     Inner(JoinConstraint),
     LeftOuter(JoinConstraint),
@@ -318,7 +318,7 @@ pub enum JoinOperator {
     Cross,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Hash)]
 pub enum JoinConstraint {
     On(ASTNode),
     Using(Vec<SQLIdent>),
@@ -326,7 +326,7 @@ pub enum JoinConstraint {
 }
 
 /// SQL ORDER BY expression
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Hash)]
 pub struct SQLOrderByExpr {
     pub expr: ASTNode,
     pub asc: Option<bool>,

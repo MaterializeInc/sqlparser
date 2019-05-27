@@ -17,13 +17,15 @@
 // information. The derived work is copyright 2019 Timely Data and
 // is not licensed under the terms of the above license.
 
+use ordered_float::OrderedFloat;
+
 /// SQL values such as int, double, string, timestamp
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Hash)]
 pub enum Value {
     /// Literal signed long
     Long(i64),
     /// Literal floating point value
-    Double(f64),
+    Double(OrderedFloat<f64>),
     /// 'string value'
     SingleQuotedString(String),
     /// N'string value'

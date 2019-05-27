@@ -20,7 +20,7 @@
 use super::SQLObjectName;
 
 /// SQL datatypes for literals in SQL statements
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Hash)]
 pub enum SQLType {
     /// Fixed-length character type e.g. CHAR(10)
     Char(Option<usize>),
