@@ -173,13 +173,10 @@ impl Parser {
                 }
                 "CASE" => self.parse_case_expression(),
                 "CAST" => self.parse_cast_expression(),
-                "NOT" => {
-                    let p = self.get_precedence(&Token::make_keyword("NOT"))?;
-                    Ok(ASTNode::SQLUnary {
-                        operator: SQLOperator::Not,
-                        expr: Box::new(self.parse_subexpr(p)?),
-                    })
-                }
+                "NOT" => Ok(ASTNode::SQLUnary {
+                    operator: SQLOperator::Not,
+                    expr: Box::new(self.parse_subexpr(Self::UNARY_NOT_PREC)?),
+                }),
                 // Here `w` is a word, check if it's a part of a multi-part
                 // identifier, a function call, or a simple identifier:
                 _ => match self.peek_token() {
@@ -213,7 +210,6 @@ impl Parser {
             }, // End of Token::SQLWord
             Token::Mult => Ok(ASTNode::SQLWildcard),
             tok @ Token::Minus | tok @ Token::Plus => {
-                let p = self.get_precedence(&tok)?;
                 let operator = if tok == Token::Plus {
                     SQLOperator::Plus
                 } else {
@@ -221,7 +217,7 @@ impl Parser {
                 };
                 Ok(ASTNode::SQLUnary {
                     operator,
-                    expr: Box::new(self.parse_subexpr(p)?),
+                    expr: Box::new(self.parse_subexpr(Self::PLUS_MINUS_PREC)?),
                 })
             }
             Token::Number(_) | Token::SingleQuotedString(_) | Token::NationalStringLiteral(_) => {
@@ -497,41 +493,68 @@ impl Parser {
         })
     }
 
+    const UNARY_NOT_PREC: u8 = 15;
+    const PLUS_MINUS_PREC: u8 = 30;
+
     /// Get the precedence of the next token
     pub fn get_next_precedence(&self) -> Result<u8, ParserError> {
         if let Some(token) = self.peek_token() {
-            self.get_precedence(&token)
+            debug!("get_precedence() {:?}", token);
+
+            match &token {
+                Token::SQLWord(k) if k.keyword == "OR" => Ok(5),
+                Token::SQLWord(k) if k.keyword == "AND" => Ok(10),
+                Token::SQLWord(k) if k.keyword == "NOT" => match &self.peek_nth_token(1) {
+                    // The precedence of NOT varies depending on keyword that
+                    // follows it. If it is followed by IN, BETWEEN, or LIKE,
+                    // it takes on the precedence of those tokens. Otherwise it
+                    // takes on UNARY_NOT_PREC.
+                    Some(Token::SQLWord(k)) if k.keyword == "IN" => Ok(20),
+                    Some(Token::SQLWord(k)) if k.keyword == "BETWEEN" => Ok(20),
+                    Some(Token::SQLWord(k)) if k.keyword == "LIKE" => Ok(20),
+                    _ => Ok(Self::UNARY_NOT_PREC),
+                },
+                Token::SQLWord(k) if k.keyword == "IS" => Ok(17),
+                Token::SQLWord(k) if k.keyword == "IN" => Ok(20),
+                Token::SQLWord(k) if k.keyword == "BETWEEN" => Ok(20),
+                Token::SQLWord(k) if k.keyword == "LIKE" => Ok(20),
+                Token::Eq | Token::Lt | Token::LtEq | Token::Neq | Token::Gt | Token::GtEq => {
+                    Ok(20)
+                }
+                Token::Plus | Token::Minus => Ok(Self::PLUS_MINUS_PREC),
+                Token::Mult | Token::Div | Token::Mod => Ok(40),
+                Token::DoubleColon => Ok(50),
+                _ => Ok(0),
+            }
         } else {
             Ok(0)
         }
     }
 
-    /// Get the precedence of a token
-    pub fn get_precedence(&self, tok: &Token) -> Result<u8, ParserError> {
-        debug!("get_precedence() {:?}", tok);
-
-        match tok {
-            Token::SQLWord(k) if k.keyword == "OR" => Ok(5),
-            Token::SQLWord(k) if k.keyword == "AND" => Ok(10),
-            Token::SQLWord(k) if k.keyword == "NOT" => Ok(15),
-            Token::SQLWord(k) if k.keyword == "IS" => Ok(17),
-            Token::SQLWord(k) if k.keyword == "IN" => Ok(20),
-            Token::SQLWord(k) if k.keyword == "BETWEEN" => Ok(20),
-            Token::SQLWord(k) if k.keyword == "LIKE" => Ok(20),
-            Token::Eq | Token::Lt | Token::LtEq | Token::Neq | Token::Gt | Token::GtEq => Ok(20),
-            Token::Plus | Token::Minus => Ok(30),
-            Token::Mult | Token::Div | Token::Mod => Ok(40),
-            Token::DoubleColon => Ok(50),
-            _ => Ok(0),
-        }
-    }
-
     /// Return first non-whitespace token that has not yet been processed
     pub fn peek_token(&self) -> Option<Token> {
-        if let Some(n) = self.til_non_whitespace() {
-            self.token_at(n)
-        } else {
-            None
+        self.peek_nth_token(0)
+    }
+
+    /// Return nth non-whitespace token that has not yet been processed
+    pub fn peek_nth_token(&self, mut n: usize) -> Option<Token> {
+        let mut index = self.index;
+        loop {
+            match self.token_at(index) {
+                Some(Token::Whitespace(_)) => {
+                    index += 1;
+                }
+                Some(token) => {
+                    if n == 0 {
+                        return Some(token);
+                    }
+                    index += 1;
+                    n -= 1;
+                }
+                None => {
+                    return None;
+                }
+            }
         }
     }
 
@@ -544,24 +567,6 @@ impl Parser {
                 }
                 token => {
                     return token;
-                }
-            }
-        }
-    }
-
-    /// get the index for non whitepsace token
-    fn til_non_whitespace(&self) -> Option<usize> {
-        let mut index = self.index;
-        loop {
-            match self.token_at(index) {
-                Some(Token::Whitespace(_)) => {
-                    index += 1;
-                }
-                Some(_) => {
-                    return Some(index);
-                }
-                None => {
-                    return None;
                 }
             }
         }
