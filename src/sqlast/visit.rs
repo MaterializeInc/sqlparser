@@ -227,9 +227,9 @@ pub trait Visit<'ast> {
         &mut self,
         table_name: &'ast SQLObjectName,
         columns: &'ast Vec<SQLIdent>,
-        values: &'ast SQLValues,
+        source: &'ast SQLQuery,
     ) {
-        visit_insert(self, table_name, columns, values)
+        visit_insert(self, table_name, columns, source)
     }
 
     fn visit_values(&mut self, rows: &'ast SQLValues) {
@@ -405,8 +405,8 @@ pub fn visit_statement<'ast, V: Visit<'ast> + ?Sized>(
         SQLStatement::SQLInsert {
             table_name,
             columns,
-            values,
-        } => visitor.visit_insert(table_name, columns, values),
+            source,
+        } => visitor.visit_insert(table_name, columns, source),
         SQLStatement::SQLCopy {
             table_name,
             columns,
@@ -901,19 +901,16 @@ pub fn visit_insert<'ast, V: Visit<'ast> + ?Sized>(
     visitor: &mut V,
     table_name: &'ast SQLObjectName,
     columns: &'ast Vec<SQLIdent>,
-    values: &'ast SQLValues,
+    source: &'ast SQLQuery,
 ) {
     visitor.visit_object_name(table_name);
     for column in columns {
         visitor.visit_identifier(column);
     }
-    visitor.visit_values(values);
+    visitor.visit_query(source);
 }
 
-pub fn visit_values<'ast, V: Visit<'ast> + ?Sized>(
-    visitor: &mut V,
-    rows: &'ast SQLValues,
-) {
+pub fn visit_values<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, rows: &'ast SQLValues) {
     for row in &rows.0 {
         visitor.visit_values_row(row)
     }

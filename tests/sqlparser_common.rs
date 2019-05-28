@@ -71,16 +71,21 @@ fn parse_insert_values() {
             SQLStatement::SQLInsert {
                 table_name,
                 columns,
-                values,
+                source,
                 ..
             } => {
                 assert_eq!(table_name.to_string(), expected_table_name);
                 assert_eq!(columns, expected_columns);
-                assert_eq!(&values.0, expected_rows);
+                match &source.body {
+                    SQLSetExpr::Values(SQLValues(values)) => assert_eq!(values, expected_rows),
+                    _ => unreachable!(),
+                }
             }
             _ => unreachable!(),
         }
     }
+
+    verified_stmt("INSERT INTO customer WITH foo AS (SELECT 1) SELECT * FROM foo UNION VALUES (1)");
 }
 
 #[test]
