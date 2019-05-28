@@ -189,10 +189,7 @@ pub trait Visit<'ast> {
 
     fn visit_value(&mut self, _val: &'ast Value) {}
 
-    fn visit_function(
-        &mut self,
-        func: &'ast SQLFunction
-    ) {
+    fn visit_function(&mut self, func: &'ast SQLFunction) {
         visit_function(self, func)
     }
 
@@ -216,6 +213,10 @@ pub trait Visit<'ast> {
         else_result: Option<&'ast ASTNode>,
     ) {
         visit_case(self, operand, conditions, results, else_result)
+    }
+
+    fn visit_exists(&mut self, subquery: &'ast SQLQuery) {
+        visit_exists(self, subquery)
     }
 
     fn visit_subquery(&mut self, subquery: &'ast SQLQuery) {
@@ -697,6 +698,7 @@ pub fn visit_expr<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, expr: &'ast AS
             results,
             else_result.as_ref().map(|r| r.as_ref()),
         ),
+        ASTNode::SQLExists(query) => visitor.visit_exists(query),
         ASTNode::SQLSubquery(query) => visitor.visit_subquery(query),
     }
 }
@@ -828,10 +830,7 @@ pub fn visit_unary<'ast, V: Visit<'ast> + ?Sized>(
     visitor.visit_operator(op);
 }
 
-pub fn visit_function<'ast, V: Visit<'ast> + ?Sized>(
-    visitor: &mut V,
-    func: &'ast SQLFunction,
-) {
+pub fn visit_function<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, func: &'ast SQLFunction) {
     visitor.visit_object_name(&func.name);
     for arg in &func.args {
         visitor.visit_expr(arg);
@@ -887,6 +886,10 @@ pub fn visit_case<'ast, V: Visit<'ast> + ?Sized>(
         Some(expr) => visitor.visit_expr(expr),
         _ => (),
     }
+}
+
+pub fn visit_exists<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, subquery: &'ast SQLQuery) {
+    visitor.visit_query(subquery)
 }
 
 pub fn visit_subquery<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, subquery: &'ast SQLQuery) {
