@@ -66,7 +66,8 @@ pub enum SQLSetExpr {
         left: Box<SQLSetExpr>,
         right: Box<SQLSetExpr>,
     },
-    // TODO: ANSI SQL supports `TABLE` and `VALUES` here.
+    Values(SQLValues),
+    // TODO: ANSI SQL supports `TABLE` here.
 }
 
 impl ToString for SQLSetExpr {
@@ -74,6 +75,7 @@ impl ToString for SQLSetExpr {
         match self {
             SQLSetExpr::Select(s) => s.to_string(),
             SQLSetExpr::Query(q) => format!("({})", q.to_string()),
+            SQLSetExpr::Values(v) => format!("VALUES {}", v.to_string()),
             SQLSetExpr::SetOperation {
                 left,
                 right,
@@ -339,5 +341,18 @@ impl ToString for SQLOrderByExpr {
             Some(false) => format!("{} DESC", self.expr.to_string()),
             None => self.expr.to_string(),
         }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Hash)]
+pub struct SQLValues(pub Vec<Vec<ASTNode>>);
+
+impl ToString for SQLValues {
+    fn to_string(&self) -> String {
+        let rows = self
+            .0
+            .iter()
+            .map(|row| format!("({})", comma_separated_string(row)));
+        comma_separated_string(rows)
     }
 }

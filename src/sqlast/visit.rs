@@ -227,13 +227,13 @@ pub trait Visit<'ast> {
         &mut self,
         table_name: &'ast SQLObjectName,
         columns: &'ast Vec<SQLIdent>,
-        values: &'ast Vec<Vec<ASTNode>>,
+        values: &'ast SQLValues,
     ) {
         visit_insert(self, table_name, columns, values)
     }
 
-    fn visit_values_clause(&mut self, rows: &'ast Vec<Vec<ASTNode>>) {
-        visit_values_clause(self, rows)
+    fn visit_values(&mut self, rows: &'ast SQLValues) {
+        visit_values(self, rows)
     }
 
     fn visit_values_row(&mut self, row: &'ast Vec<ASTNode>) {
@@ -624,6 +624,7 @@ pub fn visit_set_expr<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, set_expr: 
     match set_expr {
         SQLSetExpr::Select(select) => visitor.visit_select(select),
         SQLSetExpr::Query(query) => visitor.visit_query(query),
+        SQLSetExpr::Values(values) => visitor.visit_values(values),
         SQLSetExpr::SetOperation {
             left,
             op,
@@ -900,20 +901,20 @@ pub fn visit_insert<'ast, V: Visit<'ast> + ?Sized>(
     visitor: &mut V,
     table_name: &'ast SQLObjectName,
     columns: &'ast Vec<SQLIdent>,
-    values: &'ast Vec<Vec<ASTNode>>,
+    values: &'ast SQLValues,
 ) {
     visitor.visit_object_name(table_name);
     for column in columns {
         visitor.visit_identifier(column);
     }
-    visitor.visit_values_clause(values);
+    visitor.visit_values(values);
 }
 
-pub fn visit_values_clause<'ast, V: Visit<'ast> + ?Sized>(
+pub fn visit_values<'ast, V: Visit<'ast> + ?Sized>(
     visitor: &mut V,
-    rows: &'ast Vec<Vec<ASTNode>>,
+    rows: &'ast SQLValues,
 ) {
-    for row in rows {
+    for row in &rows.0 {
         visitor.visit_values_row(row)
     }
 }
