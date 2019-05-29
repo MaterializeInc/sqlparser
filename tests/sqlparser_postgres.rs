@@ -42,6 +42,7 @@ fn parse_create_table_with_defaults() {
         SQLStatement::SQLCreateTable {
             name,
             columns,
+            constraints,
             with_options,
             external: false,
             file_format: None,
@@ -114,6 +115,7 @@ fn parse_create_table_with_defaults() {
                     },
                 ]
             );
+            assert_eq!(constraints, vec![]);
             assert_eq!(with_options, vec![]);
         }
         _ => unreachable!(),

@@ -787,7 +787,7 @@ impl Parser {
     pub fn parse_create_external_table(&mut self) -> Result<SQLStatement, ParserError> {
         self.expect_keyword("TABLE")?;
         let table_name = self.parse_object_name()?;
-        let columns = self.parse_columns()?;
+        let (columns, constraints) = self.parse_table_defs()?;
         self.expect_keyword("STORED")?;
         self.expect_keyword("AS")?;
         let file_format = self.parse_identifier()?.parse::<FileFormat>()?;
@@ -798,6 +798,7 @@ impl Parser {
         Ok(SQLStatement::SQLCreateTable {
             name: table_name,
             columns,
+            constraints,
             with_options: vec![],
             external: true,
             file_format: Some(file_format),
@@ -882,7 +883,7 @@ impl Parser {
     pub fn parse_create_table(&mut self) -> Result<SQLStatement, ParserError> {
         let table_name = self.parse_object_name()?;
         // parse optional column list (schema)
-        let columns = self.parse_columns()?;
+        let (columns, constraints) = self.parse_table_defs()?;
         let mut with_options = vec![];
         if self.parse_keyword("WITH") {
             with_options = self.parse_with_options()?;
@@ -890,6 +891,7 @@ impl Parser {
         Ok(SQLStatement::SQLCreateTable {
             name: table_name,
             columns,
+            constraints,
             with_options,
             external: false,
             file_format: None,
@@ -897,30 +899,68 @@ impl Parser {
         })
     }
 
-    fn parse_columns(&mut self) -> Result<Vec<SQLColumnDef>, ParserError> {
+    fn parse_table_defs(
+        &mut self,
+    ) -> Result<(Vec<SQLColumnDef>, Vec<SQLTableConstraint>), ParserError> {
         let mut columns = vec![];
+        let mut constraints = vec![];
         if !self.consume_token(&Token::LParen) {
-            return Ok(columns);
+            return Ok((columns, constraints));
         }
 
         loop {
             match self.next_token() {
-                Some(Token::SQLWord(column_name)) => {
-                    let data_type = self.parse_data_type()?;
+                Some(Token::SQLWord(_)) => {
+                    self.prev_token();
 
-                    let mut constraints = vec![];
-                    loop {
-                        match self.peek_token() {
-                            None | Some(Token::Comma) | Some(Token::RParen) => break,
-                            _ => constraints.push(self.parse_column_constraint()?),
+                    let constraint_name = if self.parse_keyword("CONSTRAINT") {
+                        Some(self.parse_identifier()?)
+                    } else {
+                        None
+                    };
+
+                    if self.parse_keywords(vec!["PRIMARY", "KEY"]) {
+                        let constraint = SQLTableConstraint::PrimaryKey {
+                            name: constraint_name,
+                            columns: self.parse_parenthesized_column_list(Mandatory)?,
+                        };
+                        constraints.push(constraint);
+                    } else if self.parse_keyword("UNIQUE") {
+                        let constraint = SQLTableConstraint::Unique {
+                            name: constraint_name,
+                            columns: self.parse_parenthesized_column_list(Mandatory)?,
+                        };
+                        constraints.push(constraint);
+                    } else if self.parse_keyword("CHECK") {
+                        self.expect_token(&Token::LParen)?;
+                        let expr = self.parse_expr()?;
+                        self.expect_token(&Token::RParen)?;
+                        let constraint = SQLTableConstraint::Check {
+                            name: constraint_name,
+                            expr,
+                        };
+                        constraints.push(constraint);
+                    } else if constraint_name.is_some() {
+                        self.expected(
+                            "keyword after CONSTRAINT name in table definition",
+                            self.peek_token(),
+                        )?;
+                    } else {
+                        let column_name = self.parse_identifier()?;
+                        let data_type = self.parse_data_type()?;
+                        let mut column_constraints = vec![];
+                        loop {
+                            match self.peek_token() {
+                                None | Some(Token::Comma) | Some(Token::RParen) => break,
+                                _ => column_constraints.push(self.parse_column_constraint()?),
+                            }
                         }
+                        columns.push(SQLColumnDef {
+                            name: column_name,
+                            data_type,
+                            constraints: column_constraints,
+                        });
                     }
-
-                    columns.push(SQLColumnDef {
-                        name: column_name.as_sql_ident(),
-                        data_type,
-                        constraints,
-                    });
                 }
                 Some(Token::Comma) => (),
                 Some(Token::RParen) => break,
@@ -933,7 +973,7 @@ impl Parser {
             }
         }
 
-        Ok(columns)
+        Ok((columns, constraints))
     }
 
     pub fn parse_column_constraint(&mut self) -> Result<SQLColumnConstraint, ParserError> {
@@ -966,6 +1006,11 @@ impl Parser {
             Ok(SQLColumnConstraint::PrimaryKey(name))
         } else if self.parse_keyword("UNIQUE") {
             Ok(SQLColumnConstraint::Unique(name))
+        } else if self.parse_keyword("CHECK") {
+            self.expect_token(&Token::LParen)?;
+            let expr = self.parse_expr()?;
+            self.expect_token(&Token::RParen)?;
+            Ok(SQLColumnConstraint::Check { name, expr })
         } else {
             parser_err!(format!(
                 "Unexpected token in column definition: {:?}",

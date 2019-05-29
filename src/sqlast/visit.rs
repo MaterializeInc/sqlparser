@@ -312,6 +312,7 @@ pub trait Visit<'ast> {
         &mut self,
         name: &'ast SQLObjectName,
         columns: &'ast Vec<SQLColumnDef>,
+        constraints: &'ast Vec<SQLTableConstraint>,
         with_options: &'ast Vec<SQLOption>,
         external: bool,
         file_format: &'ast Option<FileFormat>,
@@ -321,11 +322,16 @@ pub trait Visit<'ast> {
             self,
             name,
             columns,
+            constraints,
             with_options,
             external,
             file_format,
             location,
         )
+    }
+
+    fn visit_table_constraint(&mut self, constraint: &'ast SQLTableConstraint) {
+        visit_table_constraint(self, constraint)
     }
 
     fn visit_column_def(&mut self, column_def: &'ast SQLColumnDef) {
@@ -445,6 +451,7 @@ pub fn visit_statement<'ast, V: Visit<'ast> + ?Sized>(
         SQLStatement::SQLCreateTable {
             name,
             columns,
+            constraints,
             external,
             with_options,
             file_format,
@@ -452,6 +459,7 @@ pub fn visit_statement<'ast, V: Visit<'ast> + ?Sized>(
         } => visitor.visit_create_table(
             name,
             columns,
+            constraints,
             with_options,
             *external,
             file_format,
@@ -1044,6 +1052,7 @@ pub fn visit_create_table<'ast, V: Visit<'ast> + ?Sized>(
     visitor: &mut V,
     name: &'ast SQLObjectName,
     columns: &'ast Vec<SQLColumnDef>,
+    constraints: &'ast Vec<SQLTableConstraint>,
     with_options: &'ast Vec<SQLOption>,
     _external: bool,
     file_format: &'ast Option<FileFormat>,
@@ -1053,6 +1062,9 @@ pub fn visit_create_table<'ast, V: Visit<'ast> + ?Sized>(
     for column in columns {
         visitor.visit_column_def(column);
     }
+    for constraint in constraints {
+        visitor.visit_table_constraint(constraint)
+    }
     for option in with_options {
         visitor.visit_option(option);
     }
@@ -1061,6 +1073,29 @@ pub fn visit_create_table<'ast, V: Visit<'ast> + ?Sized>(
     }
     if let Some(location) = location {
         visitor.visit_literal_string(location);
+    }
+}
+
+pub fn visit_table_constraint<'ast, V: Visit<'ast> + ?Sized>(
+    visitor: &mut V,
+    constraint: &'ast SQLTableConstraint,
+) {
+    use SQLTableConstraint::*;
+    match constraint {
+        Check { name, expr } => {
+            if let Some(name) = name {
+                visitor.visit_identifier(name);
+            }
+            visitor.visit_expr(expr)
+        }
+        Unique { name, columns } | PrimaryKey { name, columns } => {
+            if let Some(name) = name {
+                visitor.visit_identifier(name);
+            }
+            for column in columns {
+                visitor.visit_identifier(column)
+            }
+        }
     }
 }
 
@@ -1081,7 +1116,12 @@ pub fn visit_column_constraint<'ast, V: Visit<'ast> + ?Sized>(
 ) {
     use SQLColumnConstraint::*;
     match constraint {
-        Check(expr) => visitor.visit_expr(expr),
+        Check { name, expr } => {
+            if let Some(name) = name {
+                visitor.visit_identifier(name);
+            }
+            visitor.visit_expr(expr);
+        }
         Default(expr) => visitor.visit_expr(expr),
         Unique(Some(ident)) | PrimaryKey(Some(ident)) => visitor.visit_identifier(ident),
         Unique(None) | PrimaryKey(None) | Null | NotNull => (),

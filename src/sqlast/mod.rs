@@ -406,6 +406,7 @@ pub enum SQLStatement {
         name: SQLObjectName,
         /// Optional schema
         columns: Vec<SQLColumnDef>,
+        constraints: Vec<SQLTableConstraint>,
         with_options: Vec<SQLOption>,
         external: bool,
         file_format: Option<FileFormat>,
@@ -578,6 +579,7 @@ impl ToString for SQLStatement {
             SQLStatement::SQLCreateTable {
                 name,
                 columns,
+                constraints,
                 with_options,
                 ..
             } => {
@@ -586,10 +588,14 @@ impl ToString for SQLStatement {
                 } else {
                     "".into()
                 };
+                let table_defs = columns
+                    .iter()
+                    .map(ToString::to_string)
+                    .chain(constraints.iter().map(ToString::to_string));
                 format!(
                     "CREATE TABLE {} ({}){}",
                     name.to_string(),
-                    comma_separated_string(columns),
+                    comma_separated_string(table_defs),
                     with_options,
                 )
             }
@@ -628,6 +634,50 @@ impl ToString for SQLAssignment {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Hash)]
+pub enum SQLTableConstraint {
+    Check {
+        name: Option<SQLIdent>,
+        expr: ASTNode,
+    },
+    Unique {
+        name: Option<SQLIdent>,
+        columns: Vec<SQLIdent>,
+    },
+    PrimaryKey {
+        name: Option<SQLIdent>,
+        columns: Vec<SQLIdent>,
+    },
+}
+
+impl ToString for SQLTableConstraint {
+    fn to_string(&self) -> String {
+        use SQLTableConstraint::*;
+        match self {
+            Check { name, expr } => match name {
+                Some(name) => format!("CONSTRAINT {} CHECK ({})", name, expr.to_string()),
+                None => format!("CHECK ({})", expr.to_string()),
+            },
+            Unique { name, columns } => match name {
+                Some(name) => format!(
+                    "CONSTRAINT {} UNIQUE ({})",
+                    name,
+                    comma_separated_string(columns)
+                ),
+                None => format!("UNIQUE ({})", comma_separated_string(columns)),
+            },
+            PrimaryKey { name, columns } => match name {
+                Some(name) => format!(
+                    "CONSTRAINT {} PRIMARY KEY ({})",
+                    name,
+                    comma_separated_string(columns)
+                ),
+                None => format!("PRIMARY KEY ({})", comma_separated_string(columns)),
+            },
+        }
+    }
+}
+
 /// SQL column definition
 #[derive(Debug, Clone, PartialEq, Hash)]
 pub struct SQLColumnDef {
@@ -655,8 +705,11 @@ impl ToString for SQLColumnDef {
 pub enum SQLColumnConstraint {
     Null,
     NotNull,
-    Check(ASTNode),
     Default(ASTNode),
+    Check {
+        name: Option<SQLIdent>,
+        expr: ASTNode,
+    },
     Unique(Option<SQLIdent>),
     PrimaryKey(Option<SQLIdent>),
 }
@@ -667,7 +720,10 @@ impl ToString for SQLColumnConstraint {
         match self {
             Null => "NULL".to_string(),
             NotNull => "NOT NULL".to_string(),
-            Check(expr) => format!("CHECK ({})", expr.to_string()),
+            Check { name, expr } => match name {
+                Some(name) => format!("CONSTRAINT {} CHECK ({})", name, expr.to_string()),
+                None => format!("CHECK ({})", expr.to_string()),
+            },
             Default(expr) => format!("DEFAULT {}", expr.to_string()),
             Unique(name) => match name {
                 Some(name) => format!("CONSTRAINT {} UNIQUE", name),

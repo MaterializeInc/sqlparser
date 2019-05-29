@@ -715,19 +715,27 @@ fn parse_create_table() {
                name VARCHAR(100) NOT NULL,\
                lat DOUBLE NULL,\
                lng DOUBLE,
-               constrained INT NULL CONSTRAINT pkey PRIMARY KEY NOT NULL UNIQUE)";
+               PRIMARY KEY (lat, lng),
+               constrained INT NULL CONSTRAINT pkey PRIMARY KEY NOT NULL UNIQUE,
+               CONSTRAINT constrained_again UNIQUE (constrained),
+               CHECK (lat + lng = 42)
+           )";
     let ast = one_statement_parses_to(
         sql,
         "CREATE TABLE uk_cities (\
          name character varying(100) NOT NULL, \
          lat double NULL, \
          lng double, \
-         constrained int NULL CONSTRAINT pkey PRIMARY KEY NOT NULL UNIQUE)",
+         constrained int NULL CONSTRAINT pkey PRIMARY KEY NOT NULL UNIQUE, \
+         PRIMARY KEY (lat, lng), \
+         CONSTRAINT constrained_again UNIQUE (constrained), \
+         CHECK (lat + lng = 42))",
     );
     match ast {
         SQLStatement::SQLCreateTable {
             name,
             columns,
+            constraints,
             with_options,
             external: false,
             file_format: None,
@@ -762,6 +770,23 @@ fn parse_create_table() {
                             SQLColumnConstraint::Unique(None),
                         ],
                     }
+                ]
+            );
+            assert_eq!(
+                constraints,
+                vec![
+                    SQLTableConstraint::PrimaryKey {
+                        name: None,
+                        columns: vec!["lat".into(), "lng".into()],
+                    },
+                    SQLTableConstraint::Unique {
+                        name: Some("constrained_again".into()),
+                        columns: vec!["constrained".into()],
+                    },
+                    SQLTableConstraint::Check {
+                        name: None,
+                        expr: verified_expr("lat + lng = 42"),
+                    },
                 ]
             );
             assert_eq!(with_options, vec![]);
@@ -812,6 +837,7 @@ fn parse_create_external_table() {
         SQLStatement::SQLCreateTable {
             name,
             columns,
+            constraints,
             with_options,
             external,
             file_format,
@@ -838,6 +864,7 @@ fn parse_create_external_table() {
                     },
                 ]
             );
+            assert_eq!(constraints, vec![]);
 
             assert!(external);
             assert_eq!(FileFormat::TEXTFILE, file_format.unwrap());
