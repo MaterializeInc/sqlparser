@@ -165,29 +165,6 @@ impl Parser {
         Ok(expr)
     }
 
-    /// Parse expression for DEFAULT clause in CREATE TABLE
-    pub fn parse_default_expr(&mut self, precedence: u8) -> Result<ASTNode, ParserError> {
-        debug!("parsing expr");
-        let mut expr = self.parse_prefix()?;
-        debug!("prefix: {:?}", expr);
-        loop {
-            // stop parsing on `NULL` | `NOT NULL`
-            match self.peek_token() {
-                Some(Token::SQLWord(ref k)) if k.keyword == "NOT" || k.keyword == "NULL" => break,
-                _ => {}
-            }
-
-            let next_precedence = self.get_next_precedence()?;
-            debug!("next precedence: {:?}", next_precedence);
-            if precedence >= next_precedence {
-                break;
-            }
-
-            expr = self.parse_infix(expr, next_precedence)?;
-        }
-        Ok(expr)
-    }
-
     /// Parse an expression prefix
     pub fn parse_prefix(&mut self) -> Result<ASTNode, ParserError> {
         let tok = self
@@ -930,35 +907,24 @@ impl Parser {
             match self.next_token() {
                 Some(Token::SQLWord(column_name)) => {
                     let data_type = self.parse_data_type()?;
-                    let is_primary = self.parse_keywords(vec!["PRIMARY", "KEY"]);
-                    let is_unique = self.parse_keyword("UNIQUE");
-                    let default = if self.parse_keyword("DEFAULT") {
-                        let expr = self.parse_default_expr(0)?;
-                        Some(expr)
-                    } else {
-                        None
-                    };
-                    let allow_null = if self.parse_keywords(vec!["NOT", "NULL"]) {
-                        false
-                    } else {
-                        let _ = self.parse_keyword("NULL");
-                        true
-                    };
-                    debug!("default: {:?}", default);
+
+                    let mut constraints = vec![];
+                    loop {
+                        match self.peek_token() {
+                            None | Some(Token::Comma) | Some(Token::RParen) => break,
+                            _ => constraints.push(self.parse_column_constraint()?),
+                        }
+                    }
 
                     columns.push(SQLColumnDef {
                         name: column_name.as_sql_ident(),
                         data_type,
-                        allow_null,
-                        is_primary,
-                        is_unique,
-                        default,
+                        constraints,
                     });
+
                     match self.next_token() {
-                        Some(Token::Comma) => {}
-                        Some(Token::RParen) => {
-                            break;
-                        }
+                        Some(Token::Comma) => (),
+                        Some(Token::RParen) => break,
                         other => {
                             return parser_err!(format!(
                                 "Expected ',' or ')' after column definition but found {:?}",
@@ -974,6 +940,44 @@ impl Parser {
         }
 
         Ok(columns)
+    }
+
+    pub fn parse_column_constraint(&mut self) -> Result<SQLColumnConstraint, ParserError> {
+        if self.parse_keywords(vec!["NOT", "NULL"]) {
+            return Ok(SQLColumnConstraint::NotNull);
+        } else if self.parse_keyword("NULL") {
+            return Ok(SQLColumnConstraint::Null);
+        } else if self.parse_keyword("DEFAULT") {
+            // We want to allow as many DEFAULT expressions as possible, but
+            // calling self.parse_expr() will choke on expressions like "DEFAULT
+            // 1 NOT NULL". Typically this would be a syntax error, as "1 NOT
+            // NULL" is not a valid SQL expression, but in this case we know
+            // that NOT NULL is part of the next column constraint. As it turns
+            // out, the only expressions that cause trouble all have precedence
+            // less than or equal to BETWEEN, so we pass BETWEEN_PREC to stop
+            // parsing on tokens with precedence less than or equal to BETWEEN.
+            // The same trick is employed by PostgreSQL [0].
+            // https://github.com/postgres/postgres/blob/56b78626c/src/backend/parser/gram.y#L13366-L13370
+            let expr = self.parse_subexpr(Self::BETWEEN_PREC)?;
+            return Ok(SQLColumnConstraint::Default(expr));
+        }
+
+        let name = if self.parse_keyword("CONSTRAINT") {
+            Some(self.parse_identifier()?)
+        } else {
+            None
+        };
+
+        if self.parse_keywords(vec!["PRIMARY", "KEY"]) {
+            Ok(SQLColumnConstraint::PrimaryKey(name))
+        } else if self.parse_keyword("UNIQUE") {
+            Ok(SQLColumnConstraint::Unique(name))
+        } else {
+            parser_err!(format!(
+                "Unexpected token in column definition: {:?}",
+                self.peek_token()
+            ))
+        }
     }
 
     pub fn parse_table_key(&mut self, constraint_name: SQLIdent) -> Result<TableKey, ParserError> {

@@ -633,28 +633,51 @@ impl ToString for SQLAssignment {
 pub struct SQLColumnDef {
     pub name: SQLIdent,
     pub data_type: SQLType,
-    pub is_primary: bool,
-    pub is_unique: bool,
-    pub default: Option<ASTNode>,
-    pub allow_null: bool,
+    pub constraints: Vec<SQLColumnConstraint>,
 }
 
 impl ToString for SQLColumnDef {
     fn to_string(&self) -> String {
-        let mut s = format!("{} {}", self.name, self.data_type.to_string());
-        if self.is_primary {
-            s += " PRIMARY KEY";
+        format!(
+            "{} {}{}",
+            self.name,
+            self.data_type.to_string(),
+            self.constraints
+                .iter()
+                .map(|c| format!(" {}", c.to_string()))
+                .collect::<Vec<_>>()
+                .join("")
+        )
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Hash)]
+pub enum SQLColumnConstraint {
+    Null,
+    NotNull,
+    Check(ASTNode),
+    Default(ASTNode),
+    Unique(Option<SQLIdent>),
+    PrimaryKey(Option<SQLIdent>),
+}
+
+impl ToString for SQLColumnConstraint {
+    fn to_string(&self) -> String {
+        use SQLColumnConstraint::*;
+        match self {
+            Null => "NULL".to_string(),
+            NotNull => "NOT NULL".to_string(),
+            Check(expr) => format!("CHECK ({})", expr.to_string()),
+            Default(expr) => format!("DEFAULT {}", expr.to_string()),
+            Unique(name) => match name {
+                Some(name) => format!("CONSTRAINT {} UNIQUE", name),
+                None => "UNIQUE".to_string(),
+            },
+            PrimaryKey(name) => match name {
+                Some(name) => format!("CONSTRAINT {} PRIMARY KEY", name),
+                None => "PRIMARY KEY".to_string(),
+            },
         }
-        if self.is_unique {
-            s += " UNIQUE";
-        }
-        if let Some(ref default) = self.default {
-            s += &format!(" DEFAULT {}", default.to_string());
-        }
-        if !self.allow_null {
-            s += " NOT NULL";
-        }
-        s
     }
 }
 

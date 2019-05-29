@@ -714,13 +714,15 @@ fn parse_create_table() {
     let sql = "CREATE TABLE uk_cities (\
                name VARCHAR(100) NOT NULL,\
                lat DOUBLE NULL,\
-               lng DOUBLE NULL)";
+               lng DOUBLE,
+               constrained INT NULL CONSTRAINT pkey PRIMARY KEY NOT NULL UNIQUE)";
     let ast = one_statement_parses_to(
         sql,
         "CREATE TABLE uk_cities (\
          name character varying(100) NOT NULL, \
-         lat double, \
-         lng double)",
+         lat double NULL, \
+         lng double, \
+         constrained int NULL CONSTRAINT pkey PRIMARY KEY NOT NULL UNIQUE)",
     );
     match ast {
         SQLStatement::SQLCreateTable {
@@ -732,23 +734,36 @@ fn parse_create_table() {
             location: None,
         } => {
             assert_eq!("uk_cities", name.to_string());
-            assert_eq!(3, columns.len());
-
-            let c_name = &columns[0];
-            assert_eq!("name", c_name.name);
-            assert_eq!(SQLType::Varchar(Some(100)), c_name.data_type);
-            assert_eq!(false, c_name.allow_null);
-
-            let c_lat = &columns[1];
-            assert_eq!("lat", c_lat.name);
-            assert_eq!(SQLType::Double, c_lat.data_type);
-            assert_eq!(true, c_lat.allow_null);
-
-            let c_lng = &columns[2];
-            assert_eq!("lng", c_lng.name);
-            assert_eq!(SQLType::Double, c_lng.data_type);
-            assert_eq!(true, c_lng.allow_null);
-
+            assert_eq!(
+                columns,
+                vec![
+                    SQLColumnDef {
+                        name: "name".into(),
+                        data_type: SQLType::Varchar(Some(100)),
+                        constraints: vec![SQLColumnConstraint::NotNull],
+                    },
+                    SQLColumnDef {
+                        name: "lat".into(),
+                        data_type: SQLType::Double,
+                        constraints: vec![SQLColumnConstraint::Null],
+                    },
+                    SQLColumnDef {
+                        name: "lng".into(),
+                        data_type: SQLType::Double,
+                        constraints: vec![],
+                    },
+                    SQLColumnDef {
+                        name: "constrained".into(),
+                        data_type: SQLType::Int,
+                        constraints: vec![
+                            SQLColumnConstraint::Null,
+                            SQLColumnConstraint::PrimaryKey(Some("pkey".into())),
+                            SQLColumnConstraint::NotNull,
+                            SQLColumnConstraint::Unique(None),
+                        ],
+                    }
+                ]
+            );
             assert_eq!(with_options, vec![]);
         }
         _ => unreachable!(),
@@ -783,13 +798,13 @@ fn parse_create_external_table() {
     let sql = "CREATE EXTERNAL TABLE uk_cities (\
                name VARCHAR(100) NOT NULL,\
                lat DOUBLE NULL,\
-               lng DOUBLE NULL)\
+               lng DOUBLE)\
                STORED AS TEXTFILE LOCATION '/tmp/example.csv";
     let ast = one_statement_parses_to(
         sql,
         "CREATE EXTERNAL TABLE uk_cities (\
          name character varying(100) NOT NULL, \
-         lat double, \
+         lat double NULL, \
          lng double) \
          STORED AS TEXTFILE LOCATION '/tmp/example.csv'",
     );
@@ -803,22 +818,26 @@ fn parse_create_external_table() {
             location,
         } => {
             assert_eq!("uk_cities", name.to_string());
-            assert_eq!(3, columns.len());
-
-            let c_name = &columns[0];
-            assert_eq!("name", c_name.name);
-            assert_eq!(SQLType::Varchar(Some(100)), c_name.data_type);
-            assert_eq!(false, c_name.allow_null);
-
-            let c_lat = &columns[1];
-            assert_eq!("lat", c_lat.name);
-            assert_eq!(SQLType::Double, c_lat.data_type);
-            assert_eq!(true, c_lat.allow_null);
-
-            let c_lng = &columns[2];
-            assert_eq!("lng", c_lng.name);
-            assert_eq!(SQLType::Double, c_lng.data_type);
-            assert_eq!(true, c_lng.allow_null);
+            assert_eq!(
+                columns,
+                vec![
+                    SQLColumnDef {
+                        name: "name".into(),
+                        data_type: SQLType::Varchar(Some(100)),
+                        constraints: vec![SQLColumnConstraint::NotNull],
+                    },
+                    SQLColumnDef {
+                        name: "lat".into(),
+                        data_type: SQLType::Double,
+                        constraints: vec![SQLColumnConstraint::Null],
+                    },
+                    SQLColumnDef {
+                        name: "lng".into(),
+                        data_type: SQLType::Double,
+                        constraints: vec![],
+                    },
+                ]
+            );
 
             assert!(external);
             assert_eq!(FileFormat::TEXTFILE, file_format.unwrap());

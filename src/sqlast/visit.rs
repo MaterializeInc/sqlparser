@@ -332,8 +332,8 @@ pub trait Visit<'ast> {
         visit_column_def(self, column_def)
     }
 
-    fn visit_column_default(&mut self, default: Option<&'ast ASTNode>) {
-        visit_column_default(self, default)
+    fn visit_column_constraint(&mut self, constraint: &'ast SQLColumnConstraint) {
+        visit_column_constraint(self, constraint)
     }
 
     fn visit_file_format(&mut self, _file_format: &'ast FileFormat) {}
@@ -1070,16 +1070,21 @@ pub fn visit_column_def<'ast, V: Visit<'ast> + ?Sized>(
 ) {
     visitor.visit_identifier(&column_def.name);
     visitor.visit_type(&column_def.data_type);
-    visitor.visit_column_default(column_def.default.as_ref());
+    for constraint in &column_def.constraints {
+        visitor.visit_column_constraint(constraint)
+    }
 }
 
-pub fn visit_column_default<'ast, V: Visit<'ast> + ?Sized>(
+pub fn visit_column_constraint<'ast, V: Visit<'ast> + ?Sized>(
     visitor: &mut V,
-    default: Option<&'ast ASTNode>,
+    constraint: &'ast SQLColumnConstraint,
 ) {
-    match default {
-        Some(expr) => visitor.visit_expr(expr),
-        None => (),
+    use SQLColumnConstraint::*;
+    match constraint {
+        Check(expr) => visitor.visit_expr(expr),
+        Default(expr) => visitor.visit_expr(expr),
+        Unique(Some(ident)) | PrimaryKey(Some(ident)) => visitor.visit_identifier(ident),
+        Unique(None) | PrimaryKey(None) | Null | NotNull => (),
     }
 }
 
