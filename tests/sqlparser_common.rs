@@ -960,9 +960,9 @@ fn parse_aggregate_with_group_by() {
 
 #[test]
 fn parse_literal_string() {
-    let sql = "SELECT 'one', N'national string'";
+    let sql = "SELECT 'one', N'national string', X'deadBEEF'";
     let select = verified_only_select(sql);
-    assert_eq!(2, select.projection.len());
+    assert_eq!(3, select.projection.len());
     assert_eq!(
         &ASTNode::SQLValue(Value::SingleQuotedString("one".to_string())),
         expr_from_projection(&select.projection[0])
@@ -970,6 +970,20 @@ fn parse_literal_string() {
     assert_eq!(
         &ASTNode::SQLValue(Value::NationalStringLiteral("national string".to_string())),
         expr_from_projection(&select.projection[1])
+    );
+    assert_eq!(
+        &ASTNode::SQLValue(Value::HexStringLiteral("deadBEEF".to_string())),
+        expr_from_projection(&select.projection[2])
+    );
+
+    one_statement_parses_to("SELECT x'deadBEEF'", "SELECT X'deadBEEF'");
+
+    let res = parse_sql_statements("SELECT X'abcdefgfedcba'");
+    assert_eq!(
+        ParserError::ParserError(
+            "Hexadecimal string literal contains non-hex character: g".to_string()
+        ),
+        res.unwrap_err()
     );
 }
 

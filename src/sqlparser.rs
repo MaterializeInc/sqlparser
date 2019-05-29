@@ -226,7 +226,10 @@ impl Parser {
                     expr: Box::new(self.parse_subexpr(Self::PLUS_MINUS_PREC)?),
                 })
             }
-            Token::Number(_) | Token::SingleQuotedString(_) | Token::NationalStringLiteral(_) => {
+            Token::Number(_)
+            | Token::SingleQuotedString(_)
+            | Token::NationalStringLiteral(_)
+            | Token::HexStringLiteral(_) => {
                 self.prev_token();
                 self.parse_sql_value()
             }
@@ -1171,6 +1174,16 @@ impl Parser {
                 Token::SingleQuotedString(ref s) => Ok(Value::SingleQuotedString(s.to_string())),
                 Token::NationalStringLiteral(ref s) => {
                     Ok(Value::NationalStringLiteral(s.to_string()))
+                }
+                Token::HexStringLiteral(ref s) => {
+                    if let Some(bad) = s.chars().find(|c| !c.is_ascii_hexdigit()) {
+                        parser_err!(format!(
+                            "Hexadecimal string literal contains non-hex character: {}",
+                            bad
+                        ))
+                    } else {
+                        Ok(Value::HexStringLiteral(s.to_string()))
+                    }
                 }
                 _ => parser_err!(format!("Unsupported value: {:?}", t)),
             },
