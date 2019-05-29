@@ -921,20 +921,14 @@ impl Parser {
                         data_type,
                         constraints,
                     });
-
-                    match self.next_token() {
-                        Some(Token::Comma) => (),
-                        Some(Token::RParen) => break,
-                        other => {
-                            return parser_err!(format!(
-                                "Expected ',' or ')' after column definition but found {:?}",
-                                other
-                            ));
-                        }
-                    }
                 }
-                unexpected => {
-                    return parser_err!(format!("Expected column name, got {:?}", unexpected));
+                Some(Token::Comma) => (),
+                Some(Token::RParen) => break,
+                other => {
+                    return parser_err!(format!(
+                        "Expected ',' or ')' after column definition but found {:?}",
+                        other
+                    ));
                 }
             }
         }

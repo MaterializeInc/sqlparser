@@ -850,6 +850,12 @@ fn parse_create_external_table() {
 }
 
 #[test]
+fn parse_create_table_empty() {
+    // Zero-column tables are weird, but supported by at least PostgreSQL.
+    let _ = verified_stmt("CREATE TABLE t ()");
+}
+
+#[test]
 fn parse_alter_table_constraint_primary_key() {
     let sql = "ALTER TABLE bazaar.address \
                ADD CONSTRAINT address_pkey PRIMARY KEY (address_id)";
