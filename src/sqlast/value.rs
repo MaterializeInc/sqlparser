@@ -34,6 +34,12 @@ pub enum Value {
     HexStringLiteral(String),
     /// Boolean value true or false,
     Boolean(bool),
+    /// Date literals
+    Date(String),
+    /// Time literals
+    Time(String),
+    /// Timestamp literals, which include both a date and time
+    Timestamp(String),
     /// NULL value in insert statements,
     Null,
 }
@@ -47,6 +53,9 @@ impl ToString for Value {
             Value::NationalStringLiteral(v) => format!("N'{}'", v),
             Value::HexStringLiteral(v) => format!("X'{}'", v),
             Value::Boolean(v) => v.to_string(),
+            Value::Date(v) => format!("date '{}'", escape_single_quote_string(v)),
+            Value::Time(v) => format!("time '{}'", escape_single_quote_string(v)),
+            Value::Timestamp(v) => format!("timestamp '{}'", escape_single_quote_string(v)),
             Value::Null => "NULL".to_string(),
         }
     }
