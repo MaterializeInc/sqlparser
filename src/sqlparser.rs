@@ -868,7 +868,7 @@ impl Parser {
         // Many dialects support `OR REPLACE` | `OR ALTER` right after `CREATE`, but we don't (yet).
         // ANSI SQL and Postgres support RECURSIVE here, but we don't support it either.
         let name = self.parse_object_name()?;
-        // Parenthesized "output" columns list could be handled here.
+        let columns = self.parse_parenthesized_column_list(Optional)?;
         let mut with_options = vec![];
         if self.parse_keyword("WITH") {
             with_options = self.parse_with_options()?;
@@ -878,6 +878,7 @@ impl Parser {
         // Optional `WITH [ CASCADED | LOCAL ] CHECK OPTION` is widely supported here.
         Ok(SQLStatement::SQLCreateView {
             name,
+            columns,
             query,
             materialized,
             with_options,

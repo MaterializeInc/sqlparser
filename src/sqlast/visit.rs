@@ -307,11 +307,12 @@ pub trait Visit<'ast> {
     fn visit_create_view(
         &mut self,
         name: &'ast SQLObjectName,
+        columns: &'ast Vec<SQLIdent>,
         query: &'ast SQLQuery,
         materialized: bool,
         with_options: &'ast Vec<SQLOption>,
     ) {
-        visit_create_view(self, name, query, materialized, with_options)
+        visit_create_view(self, name, columns, query, materialized, with_options)
     }
 
     fn visit_create_table(
@@ -447,10 +448,11 @@ pub fn visit_statement<'ast, V: Visit<'ast> + ?Sized>(
         } => visitor.visit_create_data_sink(name, from, url, with_options),
         SQLStatement::SQLCreateView {
             name,
+            columns,
             query,
             materialized,
             with_options,
-        } => visitor.visit_create_view(name, query, *materialized, with_options),
+        } => visitor.visit_create_view(name, columns, query, *materialized, with_options),
         SQLStatement::SQLDropTable(drop) => visitor.visit_drop(drop),
         SQLStatement::SQLDropDataSource(drop) => visitor.visit_drop(drop),
         SQLStatement::SQLDropView(drop) => visitor.visit_drop(drop),
@@ -1053,11 +1055,15 @@ pub fn visit_drop<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, drop: &'ast SQ
 pub fn visit_create_view<'ast, V: Visit<'ast> + ?Sized>(
     visitor: &mut V,
     name: &'ast SQLObjectName,
+    columns: &'ast Vec<SQLIdent>,
     query: &'ast SQLQuery,
     _materialized: bool,
     with_options: &'ast Vec<SQLOption>,
 ) {
     visitor.visit_object_name(name);
+    for column in columns {
+        visitor.visit_identifier(column);
+    }
     visitor.visit_query(&query);
     for option in with_options {
         visitor.visit_option(option);

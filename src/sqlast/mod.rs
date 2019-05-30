@@ -403,6 +403,7 @@ pub enum SQLStatement {
     SQLCreateView {
         /// View name
         name: SQLObjectName,
+        columns: Vec<SQLIdent>,
         query: Box<SQLQuery>,
         materialized: bool,
         with_options: Vec<SQLOption>,
@@ -552,20 +553,27 @@ impl ToString for SQLStatement {
             }
             SQLStatement::SQLCreateView {
                 name,
+                columns,
                 query,
                 materialized,
                 with_options,
             } => {
                 let modifier = if *materialized { " MATERIALIZED" } else { "" };
+                let columns = if !columns.is_empty() {
+                    format!(" ({})", comma_separated_string(columns))
+                } else {
+                    "".into()
+                };
                 let with_options = if !with_options.is_empty() {
                     format!(" WITH ({})", comma_separated_string(with_options))
                 } else {
                     "".into()
                 };
                 format!(
-                    "CREATE{} VIEW {}{} AS {}",
+                    "CREATE{} VIEW {}{}{} AS {}",
                     modifier,
                     name.to_string(),
+                    columns,
                     with_options,
                     query.to_string()
                 )
