@@ -212,7 +212,7 @@ impl ToString for SQLSelectItem {
 pub enum TableFactor {
     Table {
         name: SQLObjectName,
-        alias: Option<SQLIdent>,
+        alias: Option<TableAlias>,
         /// Arguments of a table-valued function, as supported by Postgres
         /// and MSSQL. Note that deprecated MSSQL `FROM foo (NOLOCK)` syntax
         /// will also be parsed as `args`.
@@ -222,7 +222,7 @@ pub enum TableFactor {
     },
     Derived {
         subquery: Box<SQLQuery>,
-        alias: Option<SQLIdent>,
+        alias: Option<TableAlias>,
     },
 }
 
@@ -240,7 +240,7 @@ impl ToString for TableFactor {
                     s += &format!("({})", comma_separated_string(args))
                 };
                 if let Some(alias) = alias {
-                    s += &format!(" AS {}", alias);
+                    s += &format!(" AS {}", alias.to_string());
                 }
                 if !with_hints.is_empty() {
                     s += &format!(" WITH ({})", comma_separated_string(with_hints));
@@ -250,11 +250,27 @@ impl ToString for TableFactor {
             TableFactor::Derived { subquery, alias } => {
                 let mut s = format!("({})", subquery.to_string());
                 if let Some(alias) = alias {
-                    s += &format!(" AS {}", alias);
+                    s += &format!(" AS {}", alias.to_string());
                 }
                 s
             }
         }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Hash)]
+pub struct TableAlias {
+    pub name: SQLIdent,
+    pub columns: Vec<SQLIdent>,
+}
+
+impl ToString for TableAlias {
+    fn to_string(&self) -> String {
+        let mut s = self.name.clone();
+        if !self.columns.is_empty() {
+            s += &format!(" ({})", comma_separated_string(&self.columns));
+        }
+        s
     }
 }
 

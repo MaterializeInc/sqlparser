@@ -30,7 +30,7 @@ use std::ops::Deref;
 
 pub use self::query::{
     Cte, Join, JoinConstraint, JoinOperator, SQLOrderByExpr, SQLQuery, SQLSelect, SQLSelectItem,
-    SQLSetExpr, SQLSetOperator, SQLValues, TableFactor,
+    SQLSetExpr, SQLSetOperator, SQLValues, TableAlias, TableFactor,
 };
 pub use self::sqltype::SQLType;
 pub use self::table_key::{AlterOperation, Key, TableKey};

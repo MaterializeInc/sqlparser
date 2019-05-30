@@ -41,7 +41,7 @@ pub trait Visit<'ast> {
     fn visit_table_table_factor(
         &mut self,
         name: &'ast SQLObjectName,
-        alias: Option<&'ast SQLIdent>,
+        alias: Option<&'ast TableAlias>,
         args: &'ast Vec<ASTNode>,
         with_hints: &'ast Vec<ASTNode>,
     ) {
@@ -51,9 +51,13 @@ pub trait Visit<'ast> {
     fn visit_derived_table_factor(
         &mut self,
         subquery: &'ast SQLQuery,
-        alias: Option<&'ast SQLIdent>,
+        alias: Option<&'ast TableAlias>,
     ) {
         visit_derived_table_factor(self, subquery, alias)
+    }
+
+    fn visit_table_alias(&mut self, table_alias: &'ast TableAlias) {
+        visit_table_alias(self, table_alias)
     }
 
     fn visit_join(&mut self, join: &'ast Join) {
@@ -564,13 +568,13 @@ pub fn visit_table_factor<'ast, V: Visit<'ast> + ?Sized>(
 pub fn visit_table_table_factor<'ast, V: Visit<'ast> + ?Sized>(
     visitor: &mut V,
     name: &'ast SQLObjectName,
-    alias: Option<&'ast SQLIdent>,
+    alias: Option<&'ast TableAlias>,
     args: &'ast Vec<ASTNode>,
     with_hints: &'ast Vec<ASTNode>,
 ) {
     visitor.visit_object_name(name);
     if let Some(ident) = alias {
-        visitor.visit_identifier(ident);
+        visitor.visit_table_alias(ident);
     }
     for expr in args {
         visitor.visit_expr(expr);
@@ -583,12 +587,22 @@ pub fn visit_table_table_factor<'ast, V: Visit<'ast> + ?Sized>(
 pub fn visit_derived_table_factor<'ast, V: Visit<'ast> + ?Sized>(
     visitor: &mut V,
     subquery: &'ast SQLQuery,
-    alias: Option<&'ast SQLIdent>,
+    alias: Option<&'ast TableAlias>,
 ) {
     visitor.visit_subquery(subquery);
     match alias {
-        Some(ident) => visitor.visit_identifier(ident),
+        Some(ident) => visitor.visit_table_alias(ident),
         None => (),
+    }
+}
+
+pub fn visit_table_alias<'ast, V: Visit<'ast> + ?Sized>(
+    visitor: &mut V,
+    table_alias: &'ast TableAlias,
+) {
+    visitor.visit_identifier(&table_alias.name);
+    for column in &table_alias.columns {
+        visitor.visit_identifier(column);
     }
 }
 

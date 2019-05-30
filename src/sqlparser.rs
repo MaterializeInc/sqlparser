@@ -1371,6 +1371,23 @@ impl Parser {
         }
     }
 
+    /// Parse `AS identifier` when the AS is describing a table-valued object,
+    /// like in `... FROM generate_series(1, 10) AS t (col)`. In this case
+    /// the alias is allowed to optionally name the columns in the table, in
+    /// addition to the table itself.
+    pub fn parse_optional_table_alias(
+        &mut self,
+        reserved_kwds: &[&str],
+    ) -> Result<Option<TableAlias>, ParserError> {
+        match self.parse_optional_alias(reserved_kwds)? {
+            Some(name) => {
+                let columns = self.parse_parenthesized_column_list(Optional)?;
+                Ok(Some(TableAlias { name, columns }))
+            }
+            None => Ok(None),
+        }
+    }
+
     /// Parse one or more identifiers with the specified separator between them
     pub fn parse_list_of_ids(&mut self, separator: &Token) -> Result<Vec<SQLIdent>, ParserError> {
         let mut idents = vec![];
@@ -1648,7 +1665,7 @@ impl Parser {
         if self.consume_token(&Token::LParen) {
             let subquery = Box::new(self.parse_query()?);
             self.expect_token(&Token::RParen)?;
-            let alias = self.parse_optional_alias(keywords::RESERVED_FOR_TABLE_ALIAS)?;
+            let alias = self.parse_optional_table_alias(keywords::RESERVED_FOR_TABLE_ALIAS)?;
             Ok(TableFactor::Derived { subquery, alias })
         } else {
             let name = self.parse_object_name()?;
@@ -1658,7 +1675,7 @@ impl Parser {
             } else {
                 vec![]
             };
-            let alias = self.parse_optional_alias(keywords::RESERVED_FOR_TABLE_ALIAS)?;
+            let alias = self.parse_optional_table_alias(keywords::RESERVED_FOR_TABLE_ALIAS)?;
             // MSSQL-specific table hints:
             let mut with_hints = vec![];
             if self.parse_keyword("WITH") {
