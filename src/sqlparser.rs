@@ -1312,6 +1312,7 @@ impl Parser {
                     }
                     Ok(SQLType::Time)
                 }
+                "INTERVAL" => Ok(SQLType::Interval),
                 "REGCLASS" => Ok(SQLType::Regclass),
                 "TEXT" => {
                     if self.consume_token(&Token::LBracket) {

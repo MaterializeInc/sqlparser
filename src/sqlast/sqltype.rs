@@ -58,6 +58,8 @@ pub enum SQLType {
     Time,
     /// Timestamp
     Timestamp,
+    /// Interval
+    Interval,
     /// Regclass used in postgresql serial
     Regclass,
     /// Text
@@ -97,6 +99,7 @@ impl ToString for SQLType {
             SQLType::Date => "date".to_string(),
             SQLType::Time => "time".to_string(),
             SQLType::Timestamp => "timestamp".to_string(),
+            SQLType::Interval => "interval".to_string(),
             SQLType::Regclass => "regclass".to_string(),
             SQLType::Text => "text".to_string(),
             SQLType::Bytea => "bytea".to_string(),
