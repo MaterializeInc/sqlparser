@@ -195,6 +195,7 @@ impl Parser {
                 "DATE" => Ok(ASTNode::SQLValue(Value::Date(self.parse_literal_string()?))),
                 "EXISTS" => self.parse_exists_expression(),
                 "EXTRACT" => self.parse_extract_expression(),
+                "INTERVAL" => self.parse_literal_interval(),
                 "NOT" => Ok(ASTNode::SQLUnary {
                     operator: SQLOperator::Not,
                     expr: Box::new(self.parse_subexpr(Self::UNARY_NOT_PREC)?),
@@ -425,20 +426,7 @@ impl Parser {
 
     pub fn parse_extract_expression(&mut self) -> Result<ASTNode, ParserError> {
         self.expect_token(&Token::LParen)?;
-        let tok = self.next_token();
-        let field = if let Some(Token::SQLWord(ref k)) = tok {
-            match k.keyword.as_ref() {
-                "YEAR" => SQLDateTimeField::Year,
-                "MONTH" => SQLDateTimeField::Month,
-                "DAY" => SQLDateTimeField::Day,
-                "HOUR" => SQLDateTimeField::Hour,
-                "MINUTE" => SQLDateTimeField::Minute,
-                "SECOND" => SQLDateTimeField::Second,
-                _ => self.expected("Date/time field inside of EXTRACT function", tok)?,
-            }
-        } else {
-            self.expected("Date/time field inside of EXTRACT function", tok)?
-        };
+        let field = self.parse_date_time_field()?;
         self.expect_keyword("FROM")?;
         let expr = self.parse_expr()?;
         self.expect_token(&Token::RParen)?;
@@ -446,6 +434,100 @@ impl Parser {
             field,
             expr: Box::new(expr),
         })
+    }
+
+    pub fn parse_date_time_field(&mut self) -> Result<SQLDateTimeField, ParserError> {
+        let tok = self.next_token();
+        if let Some(Token::SQLWord(ref k)) = tok {
+            match k.keyword.as_ref() {
+                "YEAR" => Ok(SQLDateTimeField::Year),
+                "MONTH" => Ok(SQLDateTimeField::Month),
+                "DAY" => Ok(SQLDateTimeField::Day),
+                "HOUR" => Ok(SQLDateTimeField::Hour),
+                "MINUTE" => Ok(SQLDateTimeField::Minute),
+                "SECOND" => Ok(SQLDateTimeField::Second),
+                _ => self.expected("date/time field", tok)?,
+            }
+        } else {
+            self.expected("date/time field", tok)?
+        }
+    }
+
+    /// Parse an INTERVAL literal.
+    ///
+    /// Some valid intervals:
+    ///     1. `INTERVAL '1' DAY`
+    ///     2. `INTERVAL '1-1' YEAR TO MONTH`
+    ///     3. `INTERVAL '1' SECONDS`
+    ///     4. `INTERVAL '1:1:1.1' HOUR (5) TO SECONDS (5)`
+    ///     5. `INTERVAL '1.1` SECONDS (2, 2)`
+    ///     6. `INTERVAL '1:1' HOUR (5) TO MINUTE (5)`
+    ///     7. `INTERVAL '1:1' SECOND TO SECOND`
+    ///
+    /// Note that (6) is not technically standards compliant, as the only
+    /// end qualifier which can specify a precision is `SECOND`. (7) is also
+    /// not standards compliant, as `SECOND` is not permitted to appear as a
+    /// start qualifier, except in the special form of (5). In the interest of
+    /// sanity, for the time being, we accept all the forms listed above.
+    pub fn parse_literal_interval(&mut self) -> Result<ASTNode, ParserError> {
+        // The first token in an interval is a string literal which specifies
+        // the duration of the interval.
+        let value = self.parse_literal_string()?;
+
+        // Following the string literal is a qualifier which indicates the units
+        // of the duration specified in the string literal.
+        let start_field = self.parse_date_time_field()?;
+
+        // The start qualifier is optionally followed by a numeric precision.
+        // If the the start qualifier has the same units as the end qualifier,
+        // we'll actually get *two* precisions here, for both the start and the
+        // end.
+        let (start_precision, end_precision) = if self.consume_token(&Token::LParen) {
+            let start_precision = Some(self.parse_literal_uint()?);
+            let end_precision = if self.consume_token(&Token::Comma) {
+                Some(self.parse_literal_uint()?)
+            } else {
+                None
+            };
+            self.expect_token(&Token::RParen)?;
+            (start_precision, end_precision)
+        } else {
+            (None, None)
+        };
+
+        // The start qualifier is optionally followed by an end qualifier.
+        let (end_field, end_precision) = if self.parse_keyword("TO") {
+            if end_precision.is_some() {
+                // This is an interval like `INTERVAL '1' HOUR (2, 2) TO MINUTE (3)`.
+                // We've already seen the end precision, so allowing an explicit
+                // end qualifier would raise the question of which to keep.
+                // Note that while technically `INTERVAL '1:1' HOUR (2, 2) TO MINUTE`
+                // is unambiguous, it is extremely confusing and non-standard,
+                // so just reject it.
+                return parser_err!("Cannot use dual-precision syntax with TO in INTERVAL literal");
+            }
+            (
+                self.parse_date_time_field()?,
+                self.parse_optional_precision()?,
+            )
+        } else {
+            // If no end qualifier is specified, use the values from the start
+            // qualifier. Note that we might have an explicit end precision even
+            // if we don't have an explicit start field.
+            (start_field.clone(), end_precision.or(start_precision))
+        };
+
+        Ok(ASTNode::SQLValue(Value::Interval {
+            value,
+            start_qualifier: SQLIntervalQualifier {
+                field: start_field,
+                precision: start_precision,
+            },
+            end_qualifier: SQLIntervalQualifier {
+                field: end_field,
+                precision: end_precision,
+            },
+        }))
     }
 
     /// Parse an operator following an expression
@@ -1182,6 +1264,7 @@ impl Parser {
                     }
                     Ok(SQLType::Time)
                 }
+                "INTERVAL" => Ok(SQLType::Interval),
                 "REGCLASS" => Ok(SQLType::Regclass),
                 "TEXT" => {
                     if self.consume_token(&Token::LBracket) {

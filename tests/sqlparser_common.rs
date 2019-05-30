@@ -819,9 +819,7 @@ fn parse_extract() {
 
     let res = parse_sql_statements("SELECT EXTRACT(MILLISECOND FROM d)");
     assert_eq!(
-        ParserError::ParserError(
-            "Expected Date/time field inside of EXTRACT function, found: MILLISECOND".to_string()
-        ),
+        ParserError::ParserError("Expected date/time field, found: MILLISECOND".to_string()),
         res.unwrap_err()
     );
 }
@@ -1113,6 +1111,125 @@ fn parse_literal_timestamp() {
         &ASTNode::SQLValue(Value::Timestamp("1999-01-01 01:23:34".into())),
         expr_from_projection(only(&select.projection)),
     );
+}
+
+#[test]
+fn parse_literal_interval() {
+    let sql = "SELECT INTERVAL '1-1' YEAR TO MONTH";
+    let select = verified_only_select(sql);
+    assert_eq!(
+        &ASTNode::SQLValue(Value::Interval {
+            value: "1-1".into(),
+            start_qualifier: SQLIntervalQualifier {
+                field: SQLDateTimeField::Year,
+                precision: None,
+            },
+            end_qualifier: SQLIntervalQualifier {
+                field: SQLDateTimeField::Month,
+                precision: None,
+            }
+        }),
+        expr_from_projection(only(&select.projection)),
+    );
+
+    let sql = "SELECT INTERVAL '01:01.01' MINUTE (5) TO SECOND (5)";
+    let select = verified_only_select(sql);
+    assert_eq!(
+        &ASTNode::SQLValue(Value::Interval {
+            value: "01:01.01".into(),
+            start_qualifier: SQLIntervalQualifier {
+                field: SQLDateTimeField::Minute,
+                precision: Some(5),
+            },
+            end_qualifier: SQLIntervalQualifier {
+                field: SQLDateTimeField::Second,
+                precision: Some(5),
+            }
+        }),
+        expr_from_projection(only(&select.projection)),
+    );
+
+    let sql = "SELECT INTERVAL '1' SECOND (5, 4)";
+    let select = verified_only_select(sql);
+    assert_eq!(
+        &ASTNode::SQLValue(Value::Interval {
+            value: "1".into(),
+            start_qualifier: SQLIntervalQualifier {
+                field: SQLDateTimeField::Second,
+                precision: Some(5),
+            },
+            end_qualifier: SQLIntervalQualifier {
+                field: SQLDateTimeField::Second,
+                precision: Some(4),
+            }
+        }),
+        expr_from_projection(only(&select.projection)),
+    );
+
+    let sql = "SELECT INTERVAL '10' HOUR";
+    let select = verified_only_select(sql);
+    assert_eq!(
+        &ASTNode::SQLValue(Value::Interval {
+            value: "10".into(),
+            start_qualifier: SQLIntervalQualifier {
+                field: SQLDateTimeField::Hour,
+                precision: None,
+            },
+            end_qualifier: SQLIntervalQualifier {
+                field: SQLDateTimeField::Hour,
+                precision: None,
+            }
+        }),
+        expr_from_projection(only(&select.projection)),
+    );
+
+    let sql = "SELECT INTERVAL '10' HOUR (1)";
+    let select = verified_only_select(sql);
+    assert_eq!(
+        &ASTNode::SQLValue(Value::Interval {
+            value: "10".into(),
+            start_qualifier: SQLIntervalQualifier {
+                field: SQLDateTimeField::Hour,
+                precision: Some(1),
+            },
+            end_qualifier: SQLIntervalQualifier {
+                field: SQLDateTimeField::Hour,
+                precision: Some(1),
+            }
+        }),
+        expr_from_projection(only(&select.projection)),
+    );
+
+    let sql = "SELECT INTERVAL '10' HOUR (1) TO HOUR (2)";
+    let select = verified_only_select(sql);
+    assert_eq!(
+        &ASTNode::SQLValue(Value::Interval {
+            value: "10".into(),
+            start_qualifier: SQLIntervalQualifier {
+                field: SQLDateTimeField::Hour,
+                precision: Some(1),
+            },
+            end_qualifier: SQLIntervalQualifier {
+                field: SQLDateTimeField::Hour,
+                precision: Some(2),
+            }
+        }),
+        expr_from_projection(only(&select.projection)),
+    );
+
+    verified_only_select("SELECT INTERVAL '1' YEAR");
+    verified_only_select("SELECT INTERVAL '1' MONTH");
+    verified_only_select("SELECT INTERVAL '1' DAY");
+    verified_only_select("SELECT INTERVAL '1' HOUR");
+    verified_only_select("SELECT INTERVAL '1' MINUTE");
+    verified_only_select("SELECT INTERVAL '1' SECOND");
+    verified_only_select("SELECT INTERVAL '1' YEAR TO MONTH");
+    verified_only_select("SELECT INTERVAL '1' DAY TO HOUR");
+    verified_only_select("SELECT INTERVAL '1' DAY TO MINUTE");
+    verified_only_select("SELECT INTERVAL '1' DAY TO SECOND");
+    verified_only_select("SELECT INTERVAL '1' HOUR TO MINUTE");
+    verified_only_select("SELECT INTERVAL '1' HOUR TO SECOND");
+    verified_only_select("SELECT INTERVAL '1' MINUTE TO SECOND");
 }
 
 #[test]
