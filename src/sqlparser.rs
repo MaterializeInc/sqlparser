@@ -182,12 +182,15 @@ impl Parser {
                 "DATE" => Ok(ASTNode::SQLValue(Value::Date(self.parse_literal_string()?))),
                 "EXTRACT" => self.parse_extract_expression(),
                 "EXISTS" => self.parse_exists_expression(),
+                "INTERVAL" => self.parse_literal_interval(),
                 "NOT" => Ok(ASTNode::SQLUnary {
                     operator: SQLOperator::Not,
                     expr: Box::new(self.parse_subexpr(Self::UNARY_NOT_PREC)?),
                 }),
                 "TIME" => Ok(ASTNode::SQLValue(Value::Time(self.parse_literal_string()?))),
-                "TIMESTAMP" => Ok(ASTNode::SQLValue(Value::Timestamp(self.parse_literal_string()?))),
+                "TIMESTAMP" => Ok(ASTNode::SQLValue(Value::Timestamp(
+                    self.parse_literal_string()?,
+                ))),
                 // Here `w` is a word, check if it's a part of a multi-part
                 // identifier, a function call, or a simple identifier:
                 _ => match self.peek_token() {
@@ -408,20 +411,7 @@ impl Parser {
 
     pub fn parse_extract_expression(&mut self) -> Result<ASTNode, ParserError> {
         self.expect_token(&Token::LParen)?;
-        let tok = self.next_token();
-        let field = if let Some(Token::SQLWord(ref k)) = tok {
-            match k.keyword.as_ref() {
-                "YEAR" => SQLDateTimeField::Year,
-                "MONTH" => SQLDateTimeField::Month,
-                "DAY" => SQLDateTimeField::Day,
-                "HOUR" => SQLDateTimeField::Hour,
-                "MINUTE" => SQLDateTimeField::Minute,
-                "SECOND" => SQLDateTimeField::Second,
-                _ => self.expected("Date/time field inside of EXTRACT function", tok)?,
-            }
-        } else {
-            self.expected("Date/time field inside of EXTRACT function", tok)?
-        };
+        let field = self.parse_date_time_field()?;
         self.expect_keyword("FROM")?;
         let expr = self.parse_expr()?;
         self.expect_token(&Token::RParen)?;
@@ -431,12 +421,45 @@ impl Parser {
         })
     }
 
+    pub fn parse_date_time_field(&mut self) -> Result<SQLDateTimeField, ParserError> {
+        let tok = self.next_token();
+        if let Some(Token::SQLWord(ref k)) = tok {
+            match k.keyword.as_ref() {
+                "YEAR" => Ok(SQLDateTimeField::Year),
+                "MONTH" => Ok(SQLDateTimeField::Month),
+                "DAY" => Ok(SQLDateTimeField::Day),
+                "HOUR" => Ok(SQLDateTimeField::Hour),
+                "MINUTE" => Ok(SQLDateTimeField::Minute),
+                "SECOND" => Ok(SQLDateTimeField::Second),
+                _ => self.expected("date/time field", tok)?,
+            }
+        } else {
+            self.expected("date/time field", tok)?
+        }
+    }
+
     /// Parse a SQL EXISTS expression e.g. `WHERE EXISTS(SELECT ...)`.
     pub fn parse_exists_expression(&mut self) -> Result<ASTNode, ParserError> {
         self.expect_token(&Token::LParen)?;
         let exists_node = ASTNode::SQLExists(Box::new(self.parse_query()?));
         self.expect_token(&Token::RParen)?;
         Ok(exists_node)
+    }
+
+    /// Parse an INTERVAL literal e.g. `INTERVAL '1' DAY`.
+    pub fn parse_literal_interval(&mut self) -> Result<ASTNode, ParserError> {
+        let value = self.parse_literal_string()?;
+        let start_field = self.parse_date_time_field()?;
+        let end_field = if self.parse_keyword("TO") {
+            Some(self.parse_date_time_field()?)
+        } else {
+            None
+        };
+        Ok(ASTNode::SQLValue(Value::Interval {
+            value,
+            start_field,
+            end_field,
+        }))
     }
 
     /// Parse an operator following an expression
@@ -1779,12 +1802,9 @@ impl Parser {
             let id = self.parse_identifier()?;
             self.expect_token(&Token::Eq)?;
             let value = self.parse_expr()?;
-            assignments.push(SQLAssignment {
-                id,
-                value,
-            });
+            assignments.push(SQLAssignment { id, value });
             if !self.consume_token(&Token::Comma) {
-                break
+                break;
             }
         }
         let selection = if self.parse_keyword("WHERE") {
@@ -1795,7 +1815,7 @@ impl Parser {
         Ok(SQLStatement::SQLUpdate {
             table_name,
             assignments,
-            selection
+            selection,
         })
     }
 

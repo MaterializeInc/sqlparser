@@ -109,20 +109,23 @@ fn parse_update() {
             ..
         } => {
             assert_eq!(table_name.to_string(), "t".to_string());
-            assert_eq!(assignments, vec![
-                SQLAssignment {
-                    id: "a".into(),
-                    value: ASTNode::SQLValue(Value::Long(1)),
-                },
-                SQLAssignment {
-                    id: "b".into(),
-                    value: ASTNode::SQLValue(Value::Long(2)),
-                },
-                SQLAssignment {
-                    id: "c".into(),
-                    value: ASTNode::SQLValue(Value::Long(3)),
-                },
-            ]);
+            assert_eq!(
+                assignments,
+                vec![
+                    SQLAssignment {
+                        id: "a".into(),
+                        value: ASTNode::SQLValue(Value::Long(1)),
+                    },
+                    SQLAssignment {
+                        id: "b".into(),
+                        value: ASTNode::SQLValue(Value::Long(2)),
+                    },
+                    SQLAssignment {
+                        id: "c".into(),
+                        value: ASTNode::SQLValue(Value::Long(3)),
+                    },
+                ]
+            );
             assert_eq!(selection.unwrap(), ASTNode::SQLIdentifier("d".into()));
         }
         _ => unreachable!(),
@@ -768,10 +771,7 @@ fn parse_extract() {
         expr_from_projection(only(&select.projection)),
     );
 
-    one_statement_parses_to(
-        "SELECT EXTRACT(year from d)",
-        "SELECT EXTRACT(YEAR FROM d)",
-    );
+    one_statement_parses_to("SELECT EXTRACT(year from d)", "SELECT EXTRACT(YEAR FROM d)");
 
     verified_stmt("SELECT EXTRACT(MONTH FROM d)");
     verified_stmt("SELECT EXTRACT(DAY FROM d)");
@@ -781,9 +781,7 @@ fn parse_extract() {
 
     let res = parse_sql_statements("SELECT EXTRACT(MILLISECOND FROM d)");
     assert_eq!(
-        ParserError::ParserError(
-            "Expected Date/time field inside of EXTRACT function, found: MILLISECOND".to_string()
-        ),
+        ParserError::ParserError("Expected date/time field, found: MILLISECOND".to_string()),
         res.unwrap_err()
     );
 }
@@ -1068,7 +1066,7 @@ fn parse_literal_string() {
 
 #[test]
 fn parse_literal_date() {
-    let sql = "SELECT date '1999-01-01'";
+    let sql = "SELECT DATE '1999-01-01'";
     let select = verified_only_select(sql);
     assert_eq!(
         &ASTNode::SQLValue(Value::Date("1999-01-01".into())),
@@ -1078,7 +1076,7 @@ fn parse_literal_date() {
 
 #[test]
 fn parse_literal_time() {
-    let sql = "SELECT time '01:23:34'";
+    let sql = "SELECT TIME '01:23:34'";
     let select = verified_only_select(sql);
     assert_eq!(
         &ASTNode::SQLValue(Value::Time("01:23:34".into())),
@@ -1088,12 +1086,51 @@ fn parse_literal_time() {
 
 #[test]
 fn parse_literal_timestamp() {
-    let sql = "SELECT timestamp '1999-01-01 01:23:34'";
+    let sql = "SELECT TIMESTAMP '1999-01-01 01:23:34'";
     let select = verified_only_select(sql);
     assert_eq!(
         &ASTNode::SQLValue(Value::Timestamp("1999-01-01 01:23:34".into())),
         expr_from_projection(only(&select.projection)),
     );
+}
+
+#[test]
+fn parse_literal_interval() {
+    let sql = "SELECT INTERVAL '1-1' YEAR TO MONTH";
+    let select = verified_only_select(sql);
+    assert_eq!(
+        &ASTNode::SQLValue(Value::Interval {
+            value: "1-1".into(),
+            start_field: SQLDateTimeField::Year,
+            end_field: Some(SQLDateTimeField::Month),
+        }),
+        expr_from_projection(only(&select.projection)),
+    );
+
+    let sql = "SELECT INTERVAL '10' HOUR";
+    let select = verified_only_select(sql);
+    assert_eq!(
+        &ASTNode::SQLValue(Value::Interval {
+            value: "10".into(),
+            start_field: SQLDateTimeField::Hour,
+            end_field: None,
+        }),
+        expr_from_projection(only(&select.projection)),
+    );
+
+    verified_only_select("SELECT INTERVAL '1' YEAR");
+    verified_only_select("SELECT INTERVAL '1' MONTH");
+    verified_only_select("SELECT INTERVAL '1' DAY");
+    verified_only_select("SELECT INTERVAL '1' HOUR");
+    verified_only_select("SELECT INTERVAL '1' MINUTE");
+    verified_only_select("SELECT INTERVAL '1' SECOND");
+    verified_only_select("SELECT INTERVAL '1' YEAR TO MONTH");
+    verified_only_select("SELECT INTERVAL '1' DAY TO HOUR");
+    verified_only_select("SELECT INTERVAL '1' DAY TO MINUTE");
+    verified_only_select("SELECT INTERVAL '1' DAY TO SECOND");
+    verified_only_select("SELECT INTERVAL '1' HOUR TO MINUTE");
+    verified_only_select("SELECT INTERVAL '1' HOUR TO SECOND");
+    verified_only_select("SELECT INTERVAL '1' MINUTE TO SECOND");
 }
 
 #[test]
