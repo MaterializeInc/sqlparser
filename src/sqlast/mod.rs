@@ -34,7 +34,7 @@ pub use self::query::{
 };
 pub use self::sqltype::SQLType;
 pub use self::table_key::{AlterOperation, Key, TableKey};
-pub use self::value::{SQLDateTimeField, Value};
+pub use self::value::{SQLDateTimeField, SQLIntervalQualifier, Value};
 
 pub use self::sql_operator::SQLOperator;
 

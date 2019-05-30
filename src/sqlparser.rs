@@ -446,19 +446,77 @@ impl Parser {
         Ok(exists_node)
     }
 
-    /// Parse an INTERVAL literal e.g. `INTERVAL '1' DAY`.
+    /// Parse an INTERVAL literal.
+    ///
+    /// Some valid intervals:
+    ///     1. `INTERVAL '1' DAY`
+    ///     2. `INTERVAL '1-1' YEAR TO MONTH`
+    ///     3. `INTERVAL '1' SECONDS`
+    ///     4. `INTERVAL '1:1:1.1' HOUR (5) TO SECONDS (5)`
+    ///     5. `INTERVAL '1.1` SECONDS (2, 2)`
+    ///     6. `INTERVAL '1:1' HOUR (5) TO MINUTE (5)`
+    ///     7. `INTERVAL '1:1' SECOND TO SECOND`
+    ///
+    /// Note that (6) is not technically standards compliant, as the only
+    /// end qualifier which can specify a precision is `SECOND`. (7) is also
+    /// not standards compliant, as `SECOND` is not permitted to appear as a
+    /// start qualifier, except in the special form of (5). In the interest of
+    /// sanity, for the time being, we accept all the forms listed above.
     pub fn parse_literal_interval(&mut self) -> Result<ASTNode, ParserError> {
+        // The first token in an interval is a string literal which specifies
+        // the duration of the interval.
         let value = self.parse_literal_string()?;
+
+        // Following the string literal is a qualifier which indicates the units
+        // of the duration specified in the string literal.
         let start_field = self.parse_date_time_field()?;
-        let end_field = if self.parse_keyword("TO") {
-            Some(self.parse_date_time_field()?)
+
+        // The start qualifier is optionally followed by a numeric precision.
+        // If the the start qualifier has the same units as the end qualifier,
+        // we'll actually get *two* precisions here, for both the start and the
+        // end.
+        let (start_precision, end_precision) = if self.consume_token(&Token::LParen) {
+            let start_precision = Some(self.parse_literal_int()? as usize);
+            let end_precision = if self.consume_token(&Token::Comma) {
+                Some(self.parse_literal_int()? as usize)
+            } else {
+                None
+            };
+            self.expect_token(&Token::RParen)?;
+            (start_precision, end_precision)
         } else {
-            None
+            (None, None)
         };
+
+        // The start qualifier is optionally followed by an end qualifier.
+        let (end_field, end_precision) = if self.parse_keyword("TO") {
+            if end_precision.is_some() {
+                // This is an interval like `INTERVAL '1' HOUR (2, 2) TO MINUTE (3)`.
+                // We've already seen the end precision, so allowing an explicit
+                // end qualifier would raise the question of which to keep.
+                // Note that while technically `INTERVAL '1:1' HOUR (2, 2) TO MINUTE`
+                // is unambiguous, it is extremely confusing and non-standard,
+                // so just reject it.
+                return parser_err!("Cannot use dual-precision syntax with TO in INTERVAL literal");
+            }
+            (self.parse_date_time_field()?, self.parse_optional_precision()?)
+        } else {
+            // If no end qualifier is specified, use the values from the start
+            // qualifier. Note that we might have an explicit end precision even
+            // if we don't have an explicit start field.
+            (start_field.clone(), end_precision.or(start_precision))
+        };
+
         Ok(ASTNode::SQLValue(Value::Interval {
             value,
-            start_field,
-            end_field,
+            start_qualifier: SQLIntervalQualifier {
+                field: start_field,
+                precision: start_precision,
+            },
+            end_qualifier: SQLIntervalQualifier {
+                field: end_field,
+                precision: end_precision,
+            },
         }))
     }
 

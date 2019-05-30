@@ -1101,8 +1101,48 @@ fn parse_literal_interval() {
     assert_eq!(
         &ASTNode::SQLValue(Value::Interval {
             value: "1-1".into(),
-            start_field: SQLDateTimeField::Year,
-            end_field: Some(SQLDateTimeField::Month),
+            start_qualifier: SQLIntervalQualifier {
+                field: SQLDateTimeField::Year,
+                precision: None,
+            },
+            end_qualifier: SQLIntervalQualifier {
+                field: SQLDateTimeField::Month,
+                precision: None,
+            }
+        }),
+        expr_from_projection(only(&select.projection)),
+    );
+
+    let sql = "SELECT INTERVAL '01:01.01' MINUTE (5) TO SECOND (5)";
+    let select = verified_only_select(sql);
+    assert_eq!(
+        &ASTNode::SQLValue(Value::Interval {
+            value: "01:01.01".into(),
+            start_qualifier: SQLIntervalQualifier {
+                field: SQLDateTimeField::Minute,
+                precision: Some(5),
+            },
+            end_qualifier: SQLIntervalQualifier {
+                field: SQLDateTimeField::Second,
+                precision: Some(5),
+            }
+        }),
+        expr_from_projection(only(&select.projection)),
+    );
+
+    let sql = "SELECT INTERVAL '1' SECOND (5, 4)";
+    let select = verified_only_select(sql);
+    assert_eq!(
+        &ASTNode::SQLValue(Value::Interval {
+            value: "1".into(),
+            start_qualifier: SQLIntervalQualifier {
+                field: SQLDateTimeField::Second,
+                precision: Some(5),
+            },
+            end_qualifier: SQLIntervalQualifier {
+                field: SQLDateTimeField::Second,
+                precision: Some(4),
+            }
         }),
         expr_from_projection(only(&select.projection)),
     );
@@ -1112,8 +1152,48 @@ fn parse_literal_interval() {
     assert_eq!(
         &ASTNode::SQLValue(Value::Interval {
             value: "10".into(),
-            start_field: SQLDateTimeField::Hour,
-            end_field: None,
+            start_qualifier: SQLIntervalQualifier {
+                field: SQLDateTimeField::Hour,
+                precision: None,
+            },
+            end_qualifier: SQLIntervalQualifier {
+                field: SQLDateTimeField::Hour,
+                precision: None,
+            }
+        }),
+        expr_from_projection(only(&select.projection)),
+    );
+
+    let sql = "SELECT INTERVAL '10' HOUR (1)";
+    let select = verified_only_select(sql);
+    assert_eq!(
+        &ASTNode::SQLValue(Value::Interval {
+            value: "10".into(),
+            start_qualifier: SQLIntervalQualifier {
+                field: SQLDateTimeField::Hour,
+                precision: Some(1),
+            },
+            end_qualifier: SQLIntervalQualifier {
+                field: SQLDateTimeField::Hour,
+                precision: Some(1),
+            }
+        }),
+        expr_from_projection(only(&select.projection)),
+    );
+
+    let sql = "SELECT INTERVAL '10' HOUR (1) TO HOUR (2)";
+    let select = verified_only_select(sql);
+    assert_eq!(
+        &ASTNode::SQLValue(Value::Interval {
+            value: "10".into(),
+            start_qualifier: SQLIntervalQualifier {
+                field: SQLDateTimeField::Hour,
+                precision: Some(1),
+            },
+            end_qualifier: SQLIntervalQualifier {
+                field: SQLDateTimeField::Hour,
+                precision: Some(2),
+            }
         }),
         expr_from_projection(only(&select.projection)),
     );
@@ -1520,8 +1600,8 @@ fn parse_derived_tables() {
     //TODO: add assertions
 
     let sql = "SELECT a.x, b.y \
-        FROM (SELECT x FROM foo) AS a (x) \
-        CROSS JOIN (SELECT y FROM bar) AS b (y)";
+               FROM (SELECT x FROM foo) AS a (x) \
+               CROSS JOIN (SELECT y FROM bar) AS b (y)";
     let _ = verified_only_select(sql);
     //TODO: add assertions
 }
