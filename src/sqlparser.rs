@@ -178,6 +178,7 @@ impl Parser {
                 }
                 "CASE" => self.parse_case_expression(),
                 "CAST" => self.parse_cast_expression(),
+                "EXTRACT" => self.parse_extract_expression(),
                 "EXISTS" => self.parse_exists_expression(),
                 "NOT" => Ok(ASTNode::SQLUnary {
                     operator: SQLOperator::Not,
@@ -398,6 +399,31 @@ impl Parser {
         Ok(ASTNode::SQLCast {
             expr: Box::new(expr),
             data_type,
+        })
+    }
+
+    pub fn parse_extract_expression(&mut self) -> Result<ASTNode, ParserError> {
+        self.expect_token(&Token::LParen)?;
+        let tok = self.next_token();
+        let field = if let Some(Token::SQLWord(ref k)) = tok {
+            match k.keyword.as_ref() {
+                "YEAR" => SQLDateTimeField::Year,
+                "MONTH" => SQLDateTimeField::Month,
+                "DAY" => SQLDateTimeField::Day,
+                "HOUR" => SQLDateTimeField::Hour,
+                "MINUTE" => SQLDateTimeField::Minute,
+                "SECOND" => SQLDateTimeField::Second,
+                _ => self.expected("Date/time field inside of EXTRACT function", tok)?,
+            }
+        } else {
+            self.expected("Date/time field inside of EXTRACT function", tok)?
+        };
+        self.expect_keyword("FROM")?;
+        let expr = self.parse_expr()?;
+        self.expect_token(&Token::RParen)?;
+        Ok(ASTNode::SQLExtract {
+            field,
+            expr: Box::new(expr),
         })
     }
 
