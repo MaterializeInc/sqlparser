@@ -499,7 +499,10 @@ impl Parser {
                 // so just reject it.
                 return parser_err!("Cannot use dual-precision syntax with TO in INTERVAL literal");
             }
-            (self.parse_date_time_field()?, self.parse_optional_precision()?)
+            (
+                self.parse_date_time_field()?,
+                self.parse_optional_precision()?,
+            )
         } else {
             // If no end qualifier is specified, use the values from the start
             // qualifier. Note that we might have an explicit end precision even
@@ -1721,10 +1724,21 @@ impl Parser {
     /// A table name or a parenthesized subquery, followed by optional `[AS] alias`
     pub fn parse_table_factor(&mut self) -> Result<TableFactor, ParserError> {
         if self.consume_token(&Token::LParen) {
-            let subquery = Box::new(self.parse_query()?);
-            self.expect_token(&Token::RParen)?;
-            let alias = self.parse_optional_table_alias(keywords::RESERVED_FOR_TABLE_ALIAS)?;
-            Ok(TableFactor::Derived { subquery, alias })
+            if self.parse_keyword("SELECT")
+                || self.parse_keyword("WITH")
+                || self.parse_keyword("VALUES")
+            {
+                self.prev_token();
+                let subquery = Box::new(self.parse_query()?);
+                self.expect_token(&Token::RParen)?;
+                let alias = self.parse_optional_table_alias(keywords::RESERVED_FOR_TABLE_ALIAS)?;
+                Ok(TableFactor::Derived { subquery, alias })
+            } else {
+                let base = Box::new(self.parse_table_factor()?);
+                let joins = self.parse_joins()?;
+                self.expect_token(&Token::RParen)?;
+                Ok(TableFactor::NestedJoin { base, joins })
+            }
         } else {
             let name = self.parse_object_name()?;
             // Postgres, MSSQL: table-valued functions:

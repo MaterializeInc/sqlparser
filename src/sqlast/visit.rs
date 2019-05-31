@@ -56,6 +56,10 @@ pub trait Visit<'ast> {
         visit_derived_table_factor(self, subquery, alias)
     }
 
+    fn visit_nested_join_table_factor(&mut self, base: &'ast TableFactor, joins: &'ast Vec<Join>) {
+        visit_nested_join_table_factor(self, base, joins)
+    }
+
     fn visit_table_alias(&mut self, table_alias: &'ast TableAlias) {
         visit_table_alias(self, table_alias)
     }
@@ -562,6 +566,9 @@ pub fn visit_table_factor<'ast, V: Visit<'ast> + ?Sized>(
         TableFactor::Derived { subquery, alias } => {
             visitor.visit_derived_table_factor(subquery, alias.as_ref())
         }
+        TableFactor::NestedJoin { base, joins } => {
+            visitor.visit_nested_join_table_factor(base, joins)
+        }
     }
 }
 
@@ -593,6 +600,17 @@ pub fn visit_derived_table_factor<'ast, V: Visit<'ast> + ?Sized>(
     match alias {
         Some(ident) => visitor.visit_table_alias(ident),
         None => (),
+    }
+}
+
+pub fn visit_nested_join_table_factor<'ast, V: Visit<'ast> + ?Sized>(
+    visitor: &mut V,
+    base: &'ast TableFactor,
+    joins: &'ast Vec<Join>,
+) {
+    visitor.visit_table_factor(base);
+    for join in joins {
+        visitor.visit_join(join);
     }
 }
 

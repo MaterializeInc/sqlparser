@@ -77,10 +77,7 @@ fn format_interval(
     start_qualifier: &SQLIntervalQualifier,
     end_qualifier: &SQLIntervalQualifier,
 ) -> String {
-    let mut s = format!(
-        "INTERVAL '{}' ",
-        escape_single_quote_string(value),
-    );
+    let mut s = format!("INTERVAL '{}' ", escape_single_quote_string(value),);
     match (start_qualifier, end_qualifier) {
         (
             SQLIntervalQualifier {
@@ -105,7 +102,11 @@ fn format_interval(
 
         _ => {
             // General case: output both, with precisions.
-            s += &format!("{} TO {}", start_qualifier.to_string(), end_qualifier.to_string());
+            s += &format!(
+                "{} TO {}",
+                start_qualifier.to_string(),
+                end_qualifier.to_string()
+            );
         }
     }
     s
