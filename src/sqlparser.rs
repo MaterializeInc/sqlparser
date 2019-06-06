@@ -197,7 +197,7 @@ impl Parser {
                 "EXTRACT" => self.parse_extract_expression(),
                 "NOT" => Ok(ASTNode::SQLUnary {
                     operator: SQLOperator::Not,
-                    expr: Box::new(self.parse_subexpr(Self::UNARY_NOT_PREC)?),
+                    expr: Box::new(self.parse_subexpr(15)?),
                 }),
                 "TIME" => Ok(ASTNode::SQLValue(Value::Time(self.parse_literal_string()?))),
                 "TIMESTAMP" => Ok(ASTNode::SQLValue(Value::Timestamp(
@@ -564,7 +564,6 @@ impl Parser {
         })
     }
 
-    const UNARY_NOT_PREC: u8 = 15;
     const BETWEEN_PREC: u8 = 20;
     const PLUS_MINUS_PREC: u8 = 30;
 
@@ -580,11 +579,12 @@ impl Parser {
                     // The precedence of NOT varies depending on keyword that
                     // follows it. If it is followed by IN, BETWEEN, or LIKE,
                     // it takes on the precedence of those tokens. Otherwise it
-                    // takes on UNARY_NOT_PREC.
+                    // is not an infix operator, and therefore has zero
+                    // precedence.
                     Some(Token::SQLWord(k)) if k.keyword == "IN" => Ok(Self::BETWEEN_PREC),
                     Some(Token::SQLWord(k)) if k.keyword == "BETWEEN" => Ok(Self::BETWEEN_PREC),
                     Some(Token::SQLWord(k)) if k.keyword == "LIKE" => Ok(Self::BETWEEN_PREC),
-                    _ => Ok(Self::UNARY_NOT_PREC),
+                    _ => Ok(0),
                 },
                 Token::SQLWord(k) if k.keyword == "IS" => Ok(17),
                 Token::SQLWord(k) if k.keyword == "IN" => Ok(Self::BETWEEN_PREC),
