@@ -11,29 +11,24 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
-// Additional modifications to this file may have been made by Timely
-// Data, Inc. See the version control log for precise modification
-// information. The derived work is copyright 2019 Timely Data and
-// is not licensed under the terms of the above license.
 
 //! SQL Abstract Syntax Tree (AST) types
 
+mod ddl;
 mod query;
 mod sql_operator;
 mod sqltype;
-mod table_key;
 mod value;
 pub mod visit;
 
 use std::ops::Deref;
 
+pub use self::ddl::{AlterTableOperation, ColumnConstraint, SQLColumnDef, TableConstraint};
 pub use self::query::{
-    Cte, Join, JoinConstraint, JoinOperator, SQLOrderByExpr, SQLQuery, SQLSelect, SQLSelectItem,
-    SQLSetExpr, SQLSetOperator, SQLValues, TableAlias, TableFactor,
+    Cte, Fetch, Join, JoinConstraint, JoinOperator, SQLOrderByExpr, SQLQuery, SQLSelect,
+    SQLSelectItem, SQLSetExpr, SQLSetOperator, SQLValues, TableAlias, TableFactor,
 };
 pub use self::sqltype::SQLType;
-pub use self::table_key::{AlterOperation, Key, TableKey};
 pub use self::value::{SQLDateTimeField, SQLIntervalQualifier, Value};
 
 pub use self::sql_operator::SQLOperator;
@@ -348,6 +343,7 @@ impl ToString for SQLWindowFrameBound {
 }
 
 /// A top-level statement (SELECT, INSERT, CREATE, etc.)
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, PartialEq, Hash)]
 pub enum SQLStatement {
     /// SELECT
@@ -414,7 +410,7 @@ pub enum SQLStatement {
         name: SQLObjectName,
         /// Optional schema
         columns: Vec<SQLColumnDef>,
-        constraints: Vec<SQLTableConstraint>,
+        constraints: Vec<TableConstraint>,
         with_options: Vec<SQLOption>,
         external: bool,
         file_format: Option<FileFormat>,
@@ -424,14 +420,15 @@ pub enum SQLStatement {
     SQLAlterTable {
         /// Table name
         name: SQLObjectName,
-        operation: AlterOperation,
+        operation: AlterTableOperation,
     },
     /// DROP TABLE
-    SQLDropTable(SQLDrop),
-    /// DROP DATA SOURCE
-    SQLDropDataSource(SQLDrop),
-    /// DROP VIEW
-    SQLDropView(SQLDrop),
+    SQLDrop {
+        object_type: SQLObjectType,
+        if_exists: bool,
+        names: Vec<SQLObjectName>,
+        cascade: bool,
+    },
     /// PEEK
     SQLPeek {
         name: SQLObjectName,
@@ -559,13 +556,13 @@ impl ToString for SQLStatement {
                 with_options,
             } => {
                 let modifier = if *materialized { " MATERIALIZED" } else { "" };
-                let columns = if !columns.is_empty() {
-                    format!(" ({})", comma_separated_string(columns))
+                let with_options = if !with_options.is_empty() {
+                    format!(" WITH ({})", comma_separated_string(with_options))
                 } else {
                     "".into()
                 };
-                let with_options = if !with_options.is_empty() {
-                    format!(" WITH ({})", comma_separated_string(with_options))
+                let columns = if !columns.is_empty() {
+                    format!(" ({})", comma_separated_string(columns))
                 } else {
                     "".into()
                 };
@@ -573,54 +570,57 @@ impl ToString for SQLStatement {
                     "CREATE{} VIEW {}{}{} AS {}",
                     modifier,
                     name.to_string(),
-                    columns,
                     with_options,
-                    query.to_string()
+                    columns,
+                    query.to_string(),
                 )
             }
-            SQLStatement::SQLCreateTable {
-                name,
-                columns,
-                external,
-                file_format,
-                location,
-                ..
-            } if *external => format!(
-                "CREATE EXTERNAL TABLE {} ({}) STORED AS {} LOCATION '{}'",
-                name.to_string(),
-                comma_separated_string(columns),
-                file_format.as_ref().unwrap().to_string(),
-                location.as_ref().unwrap()
-            ),
             SQLStatement::SQLCreateTable {
                 name,
                 columns,
                 constraints,
                 with_options,
-                ..
+                external,
+                file_format,
+                location,
             } => {
-                let with_options = if !with_options.is_empty() {
-                    format!(" WITH ({})", comma_separated_string(with_options))
-                } else {
-                    "".into()
-                };
-                let table_defs = columns
-                    .iter()
-                    .map(ToString::to_string)
-                    .chain(constraints.iter().map(ToString::to_string));
-                format!(
-                    "CREATE TABLE {} ({}){}",
+                let mut s = format!(
+                    "CREATE {}TABLE {} ({}",
+                    if *external { "EXTERNAL " } else { "" },
                     name.to_string(),
-                    comma_separated_string(table_defs),
-                    with_options,
-                )
+                    comma_separated_string(columns)
+                );
+                if !constraints.is_empty() {
+                    s += &format!(", {}", comma_separated_string(constraints));
+                }
+                s += ")";
+                if *external {
+                    s += &format!(
+                        " STORED AS {} LOCATION '{}'",
+                        file_format.as_ref().unwrap().to_string(),
+                        location.as_ref().unwrap()
+                    );
+                }
+                if !with_options.is_empty() {
+                    s += &format!(" WITH ({})", comma_separated_string(with_options));
+                }
+                s
             }
-            SQLStatement::SQLDropTable(drop) => drop.to_string_internal("TABLE"),
-            SQLStatement::SQLDropDataSource(drop) => drop.to_string_internal("DATA SOURCE"),
-            SQLStatement::SQLDropView(drop) => drop.to_string_internal("VIEW"),
             SQLStatement::SQLAlterTable { name, operation } => {
                 format!("ALTER TABLE {} {}", name.to_string(), operation.to_string())
             }
+            SQLStatement::SQLDrop {
+                object_type,
+                if_exists,
+                names,
+                cascade,
+            } => format!(
+                "DROP {}{} {}{}",
+                object_type.to_string(),
+                if *if_exists { " IF EXISTS" } else { "" },
+                comma_separated_string(names),
+                if *cascade { " CASCADE" } else { "" },
+            ),
             SQLStatement::SQLPeek { name } => format!("PEEK {}", name.to_string()),
             SQLStatement::SQLTail { name } => format!("TAIL {}", name.to_string()),
         }
@@ -647,109 +647,6 @@ pub struct SQLAssignment {
 impl ToString for SQLAssignment {
     fn to_string(&self) -> String {
         format!("{} = {}", self.id, self.value.to_string())
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Hash)]
-pub enum SQLTableConstraint {
-    Check {
-        name: Option<SQLIdent>,
-        expr: ASTNode,
-    },
-    Unique {
-        name: Option<SQLIdent>,
-        columns: Vec<SQLIdent>,
-    },
-    PrimaryKey {
-        name: Option<SQLIdent>,
-        columns: Vec<SQLIdent>,
-    },
-}
-
-impl ToString for SQLTableConstraint {
-    fn to_string(&self) -> String {
-        use SQLTableConstraint::*;
-        match self {
-            Check { name, expr } => match name {
-                Some(name) => format!("CONSTRAINT {} CHECK ({})", name, expr.to_string()),
-                None => format!("CHECK ({})", expr.to_string()),
-            },
-            Unique { name, columns } => match name {
-                Some(name) => format!(
-                    "CONSTRAINT {} UNIQUE ({})",
-                    name,
-                    comma_separated_string(columns)
-                ),
-                None => format!("UNIQUE ({})", comma_separated_string(columns)),
-            },
-            PrimaryKey { name, columns } => match name {
-                Some(name) => format!(
-                    "CONSTRAINT {} PRIMARY KEY ({})",
-                    name,
-                    comma_separated_string(columns)
-                ),
-                None => format!("PRIMARY KEY ({})", comma_separated_string(columns)),
-            },
-        }
-    }
-}
-
-/// SQL column definition
-#[derive(Debug, Clone, PartialEq, Hash)]
-pub struct SQLColumnDef {
-    pub name: SQLIdent,
-    pub data_type: SQLType,
-    pub constraints: Vec<SQLColumnConstraint>,
-}
-
-impl ToString for SQLColumnDef {
-    fn to_string(&self) -> String {
-        format!(
-            "{} {}{}",
-            self.name,
-            self.data_type.to_string(),
-            self.constraints
-                .iter()
-                .map(|c| format!(" {}", c.to_string()))
-                .collect::<Vec<_>>()
-                .join("")
-        )
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Hash)]
-pub enum SQLColumnConstraint {
-    Null,
-    NotNull,
-    Default(ASTNode),
-    Check {
-        name: Option<SQLIdent>,
-        expr: ASTNode,
-    },
-    Unique(Option<SQLIdent>),
-    PrimaryKey(Option<SQLIdent>),
-}
-
-impl ToString for SQLColumnConstraint {
-    fn to_string(&self) -> String {
-        use SQLColumnConstraint::*;
-        match self {
-            Null => "NULL".to_string(),
-            NotNull => "NOT NULL".to_string(),
-            Check { name, expr } => match name {
-                Some(name) => format!("CONSTRAINT {} CHECK ({})", name, expr.to_string()),
-                None => format!("CHECK ({})", expr.to_string()),
-            },
-            Default(expr) => format!("DEFAULT {}", expr.to_string()),
-            Unique(name) => match name {
-                Some(name) => format!("CONSTRAINT {} UNIQUE", name),
-                None => "UNIQUE".to_string(),
-            },
-            PrimaryKey(name) => match name {
-                Some(name) => format!("CONSTRAINT {} PRIMARY KEY", name),
-                None => "PRIMARY KEY".to_string(),
-            },
-        }
     }
 }
 
@@ -839,27 +736,21 @@ impl FromStr for FileFormat {
 }
 
 #[derive(Debug, Clone, PartialEq, Hash)]
-pub struct SQLDrop {
-    pub if_exists: bool,
-    pub names: Vec<SQLObjectName>,
-    pub cascade: bool,
-    pub restrict: bool,
+pub enum SQLObjectType {
+    Table,
+    View,
+    DataSource,
+    DataSink,
 }
 
-impl SQLDrop {
-    fn to_string_internal(&self, object_type: &str) -> String {
-        format!(
-            "DROP {}{} {}{}{}",
-            object_type,
-            if self.if_exists { " IF EXISTS" } else { "" },
-            self.names
-                .iter()
-                .map(|name| name.to_string())
-                .collect::<Vec<String>>()
-                .join(", "),
-            if self.cascade { " CASCADE" } else { "" },
-            if self.restrict { " RESTRICT" } else { "" },
-        )
+impl SQLObjectType {
+    fn to_string(&self) -> String {
+        match self {
+            SQLObjectType::Table => "TABLE".into(),
+            SQLObjectType::View => "VIEW".into(),
+            SQLObjectType::DataSource => "DATA SOURCE".into(),
+            SQLObjectType::DataSink => "DATA SINK".into(),
+        }
     }
 }
 

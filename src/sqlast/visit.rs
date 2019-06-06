@@ -1,9 +1,25 @@
-// Copyright 2019 Timely Data, Inc. All rights reserved.
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
 //
-// This file may not be used or distributed without the express permission of
-// Timely Data, Inc.
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 //! SQL AST traversal.
+
+// Visiting an enum struct variant with many arguments forces our hand here.
+// If, over time, we convert these large variants to dedicated structs, we
+// can remove this escape hatch.
+#![allow(clippy::too_many_arguments)]
+
+// Disable lints that want us to rewrite `&SQLIdent` as `&str`, as `&str` is not
+// as self-documenting as &SQLIdent.
+#![allow(clippy::ptr_arg)]
 
 use super::*;
 
@@ -42,26 +58,27 @@ pub trait Visit<'ast> {
         &mut self,
         name: &'ast SQLObjectName,
         alias: Option<&'ast TableAlias>,
-        args: &'ast Vec<ASTNode>,
-        with_hints: &'ast Vec<ASTNode>,
+        args: &'ast [ASTNode],
+        with_hints: &'ast [ASTNode],
     ) {
         visit_table_table_factor(self, name, alias, args, with_hints)
     }
 
     fn visit_derived_table_factor(
         &mut self,
+        lateral: bool,
         subquery: &'ast SQLQuery,
         alias: Option<&'ast TableAlias>,
     ) {
-        visit_derived_table_factor(self, subquery, alias)
+        visit_derived_table_factor(self, lateral, subquery, alias)
     }
 
-    fn visit_nested_join_table_factor(&mut self, base: &'ast TableFactor, joins: &'ast Vec<Join>) {
+    fn visit_nested_join_table_factor(&mut self, base: &'ast TableFactor, joins: &'ast [Join]) {
         visit_nested_join_table_factor(self, base, joins)
     }
 
-    fn visit_table_alias(&mut self, table_alias: &'ast TableAlias) {
-        visit_table_alias(self, table_alias)
+    fn visit_table_alias(&mut self, alias: &'ast TableAlias) {
+        visit_table_alias(self, alias)
     }
 
     fn visit_join(&mut self, join: &'ast Join) {
@@ -80,7 +97,7 @@ pub trait Visit<'ast> {
         visit_where(self, expr)
     }
 
-    fn visit_group_by(&mut self, exprs: &'ast Vec<ASTNode>) {
+    fn visit_group_by(&mut self, exprs: &'ast [ASTNode]) {
         visit_group_by(self, exprs)
     }
 
@@ -130,15 +147,15 @@ pub trait Visit<'ast> {
         visit_object_name(self, object_name)
     }
 
-    fn visit_identifier(&mut self, _ident: &'ast SQLIdent) {}
+    fn visit_ident(&mut self, _ident: &'ast SQLIdent) {}
 
-    fn visit_compound_identifier(&mut self, idents: &'ast Vec<SQLIdent>) {
+    fn visit_compound_identifier(&mut self, idents: &'ast [SQLIdent]) {
         visit_compound_identifier(self, idents)
     }
 
     fn visit_wildcard(&mut self) {}
 
-    fn visit_qualified_wildcard(&mut self, idents: &'ast Vec<SQLIdent>) {
+    fn visit_qualified_wildcard(&mut self, idents: &'ast [SQLIdent]) {
         visit_qualified_wildcard(self, idents)
     }
 
@@ -150,7 +167,7 @@ pub trait Visit<'ast> {
         visit_is_not_null(self, expr)
     }
 
-    fn visit_in_list(&mut self, expr: &'ast ASTNode, list: &'ast Vec<ASTNode>, negated: bool) {
+    fn visit_in_list(&mut self, expr: &'ast ASTNode, list: &'ast [ASTNode], negated: bool) {
         visit_in_list(self, expr, list, negated)
     }
 
@@ -183,15 +200,15 @@ pub trait Visit<'ast> {
         visit_cast(self, expr, data_type)
     }
 
+    fn visit_collate(&mut self, expr: &'ast ASTNode, collation: &'ast SQLObjectName) {
+        visit_collate(self, expr, collation)
+    }
+
     fn visit_extract(&mut self, field: &'ast SQLDateTimeField, expr: &'ast ASTNode) {
         visit_extract(self, field, expr)
     }
 
     fn visit_date_time_field(&mut self, _field: &'ast SQLDateTimeField) {}
-
-    fn visit_collate(&mut self, expr: &'ast ASTNode, collation: &'ast SQLObjectName) {
-        visit_collate(self, expr, collation)
-    }
 
     fn visit_nested(&mut self, expr: &'ast ASTNode) {
         visit_nested(self, expr)
@@ -222,8 +239,8 @@ pub trait Visit<'ast> {
     fn visit_case(
         &mut self,
         operand: Option<&'ast ASTNode>,
-        conditions: &'ast Vec<ASTNode>,
-        results: &'ast Vec<ASTNode>,
+        conditions: &'ast [ASTNode],
+        results: &'ast [ASTNode],
         else_result: Option<&'ast ASTNode>,
     ) {
         visit_case(self, operand, conditions, results, else_result)
@@ -240,30 +257,30 @@ pub trait Visit<'ast> {
     fn visit_insert(
         &mut self,
         table_name: &'ast SQLObjectName,
-        columns: &'ast Vec<SQLIdent>,
+        columns: &'ast [SQLIdent],
         source: &'ast SQLQuery,
     ) {
         visit_insert(self, table_name, columns, source)
     }
 
-    fn visit_values(&mut self, rows: &'ast SQLValues) {
-        visit_values(self, rows)
+    fn visit_values(&mut self, values: &'ast SQLValues) {
+        visit_values(self, values)
     }
 
-    fn visit_values_row(&mut self, row: &'ast Vec<ASTNode>) {
+    fn visit_values_row(&mut self, row: &'ast [ASTNode]) {
         visit_values_row(self, row)
     }
 
     fn visit_copy(
         &mut self,
         table_name: &'ast SQLObjectName,
-        columns: &'ast Vec<SQLIdent>,
-        values: &'ast Vec<Option<String>>,
+        columns: &'ast [SQLIdent],
+        values: &'ast [Option<String>],
     ) {
         visit_copy(self, table_name, columns, values)
     }
 
-    fn visit_copy_values(&mut self, values: &'ast Vec<Option<String>>) {
+    fn visit_copy_values(&mut self, values: &'ast [Option<String>]) {
         visit_copy_values(self, values)
     }
 
@@ -272,7 +289,7 @@ pub trait Visit<'ast> {
     fn visit_update(
         &mut self,
         table_name: &'ast SQLObjectName,
-        assignments: &'ast Vec<SQLAssignment>,
+        assignments: &'ast [SQLAssignment],
         selection: Option<&'ast ASTNode>,
     ) {
         visit_update(self, table_name, assignments, selection)
@@ -285,6 +302,8 @@ pub trait Visit<'ast> {
     fn visit_delete(&mut self, table_name: &'ast SQLObjectName, selection: Option<&'ast ASTNode>) {
         visit_delete(self, table_name, selection)
     }
+
+    fn visit_literal_string(&mut self, _string: &'ast String) {}
 
     fn visit_create_data_source(
         &mut self,
@@ -310,15 +329,13 @@ pub trait Visit<'ast> {
         visit_create_data_sink(self, name, from, url, with_options)
     }
 
-    fn visit_literal_string(&mut self, _string: &'ast String) {}
-
     fn visit_create_view(
         &mut self,
         name: &'ast SQLObjectName,
-        columns: &'ast Vec<SQLIdent>,
+        columns: &'ast [SQLIdent],
         query: &'ast SQLQuery,
         materialized: bool,
-        with_options: &'ast Vec<SQLOption>,
+        with_options: &'ast [SQLOption],
     ) {
         visit_create_view(self, name, columns, query, materialized, with_options)
     }
@@ -326,9 +343,9 @@ pub trait Visit<'ast> {
     fn visit_create_table(
         &mut self,
         name: &'ast SQLObjectName,
-        columns: &'ast Vec<SQLColumnDef>,
-        constraints: &'ast Vec<SQLTableConstraint>,
-        with_options: &'ast Vec<SQLOption>,
+        columns: &'ast [SQLColumnDef],
+        constraints: &'ast [TableConstraint],
+        with_options: &'ast [SQLOption],
         external: bool,
         file_format: &'ast Option<FileFormat>,
         location: &'ast Option<String>,
@@ -345,15 +362,11 @@ pub trait Visit<'ast> {
         )
     }
 
-    fn visit_table_constraint(&mut self, constraint: &'ast SQLTableConstraint) {
-        visit_table_constraint(self, constraint)
-    }
-
     fn visit_column_def(&mut self, column_def: &'ast SQLColumnDef) {
         visit_column_def(self, column_def)
     }
 
-    fn visit_column_constraint(&mut self, constraint: &'ast SQLColumnConstraint) {
+    fn visit_column_constraint(&mut self, constraint: &'ast ColumnConstraint) {
         visit_column_constraint(self, constraint)
     }
 
@@ -363,49 +376,63 @@ pub trait Visit<'ast> {
         visit_option(self, option)
     }
 
-    fn visit_drop(&mut self, drop: &'ast SQLDrop) {
-        visit_drop(self, drop)
+    fn visit_drop(
+        &mut self,
+        object_type: &'ast SQLObjectType,
+        if_exists: bool,
+        names: &'ast [SQLObjectName],
+        cascade: bool,
+    ) {
+        visit_drop(self, object_type, if_exists, names, cascade)
     }
 
-    fn visit_alter_table(&mut self, name: &'ast SQLObjectName, operation: &'ast AlterOperation) {
+    fn visit_object_type(&mut self, _object_type: &'ast SQLObjectType) {}
+
+    fn visit_alter_table(
+        &mut self,
+        name: &'ast SQLObjectName,
+        operation: &'ast AlterTableOperation,
+    ) {
         visit_alter_table(self, name, operation)
     }
 
-    fn visit_alter_operation(&mut self, operation: &'ast AlterOperation) {
-        visit_alter_operation(self, operation)
+    fn visit_alter_table_operation(&mut self, operation: &'ast AlterTableOperation) {
+        visit_alter_table_operation(self, operation)
     }
 
-    fn visit_alter_add_constraint(&mut self, table_key: &'ast TableKey) {
-        visit_alter_add_constraint(self, table_key)
+    fn visit_alter_add_constraint(&mut self, table_constraint: &'ast TableConstraint) {
+        visit_alter_add_constraint(self, table_constraint)
     }
 
-    fn visit_table_key(&mut self, table_key: &'ast TableKey) {
-        visit_table_key(self, table_key)
+    fn visit_table_constraint(&mut self, table_constraint: &'ast TableConstraint) {
+        visit_table_constraint(self, table_constraint)
     }
 
-    fn visit_primary_key(&mut self, key: &'ast Key) {
-        visit_primary_key(self, key)
-    }
-
-    fn visit_unique_key(&mut self, key: &'ast Key) {
-        visit_unique_key(self, key)
-    }
-
-    fn visit_foreign_key(
+    fn visit_table_constraint_unique(
         &mut self,
-        key: &'ast Key,
-        foreign_table: &'ast SQLObjectName,
-        referred_columns: &'ast Vec<SQLIdent>,
+        name: Option<&'ast SQLIdent>,
+        columns: &'ast [SQLIdent],
+        is_primary: bool,
     ) {
-        visit_foreign_key(self, key, foreign_table, referred_columns)
+        visit_table_constraint_unique(self, name, columns, is_primary)
     }
 
-    fn visit_key(&mut self, key: &'ast Key) {
-        visit_key(self, key)
+    fn visit_table_constraint_foreign_key(
+        &mut self,
+        name: Option<&'ast SQLIdent>,
+        columns: &'ast [SQLIdent],
+        foreign_table: &'ast SQLObjectName,
+        referred_columns: &'ast [SQLIdent],
+    ) {
+        visit_table_constraint_foreign_key(self, name, columns, foreign_table, referred_columns)
     }
 
-    fn visit_alter_remove_constraint(&mut self, name: &'ast SQLIdent) {
-        visit_alter_remove_constraint(self, name)
+    fn visit_table_constraint_check(&mut self, name: Option<&'ast SQLIdent>, expr: &'ast ASTNode) {
+        visit_table_constraint_check(self, name, expr)
+    }
+
+    fn visit_alter_drop_constraint(&mut self, name: &'ast SQLIdent) {
+        visit_alter_drop_constraint(self, name)
     }
 
     fn visit_peek(&mut self, name: &'ast SQLObjectName) {
@@ -461,9 +488,12 @@ pub fn visit_statement<'ast, V: Visit<'ast> + ?Sized>(
             materialized,
             with_options,
         } => visitor.visit_create_view(name, columns, query, *materialized, with_options),
-        SQLStatement::SQLDropTable(drop) => visitor.visit_drop(drop),
-        SQLStatement::SQLDropDataSource(drop) => visitor.visit_drop(drop),
-        SQLStatement::SQLDropView(drop) => visitor.visit_drop(drop),
+        SQLStatement::SQLDrop {
+            object_type,
+            if_exists,
+            names,
+            cascade,
+        } => visitor.visit_drop(object_type, *if_exists, names, *cascade),
         SQLStatement::SQLCreateTable {
             name,
             columns,
@@ -501,14 +531,13 @@ pub fn visit_query<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, query: &'ast 
     for order_by in &query.order_by {
         visitor.visit_order_by(order_by);
     }
-    match query.limit {
-        Some(ref expr) => visitor.visit_limit(expr),
-        None => (),
+    if let Some(limit) = &query.limit {
+        visitor.visit_limit(limit);
     }
 }
 
 pub fn visit_cte<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, cte: &'ast Cte) {
-    visitor.visit_identifier(&cte.alias);
+    visitor.visit_ident(&cte.alias);
     visitor.visit_query(&cte.query);
 }
 
@@ -516,23 +545,20 @@ pub fn visit_select<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, select: &'as
     for select_item in &select.projection {
         visitor.visit_select_item(select_item)
     }
-    match select.relation {
-        Some(ref table_factor) => visitor.visit_table_factor(table_factor),
-        None => (),
+    if let Some(relation) = &select.relation {
+        visitor.visit_table_factor(relation);
     }
     for join in &select.joins {
         visitor.visit_join(join);
     }
-    match select.selection {
-        Some(ref expr) => visitor.visit_where(expr),
-        None => (),
+    if let Some(selection) = &select.selection {
+        visitor.visit_where(selection);
     }
     if !select.group_by.is_empty() {
         visitor.visit_group_by(&select.group_by);
     }
-    match select.having {
-        Some(ref expr) => visitor.visit_having(expr),
-        None => (),
+    if let Some(having) = &select.having {
+        visitor.visit_having(having);
     }
 }
 
@@ -563,9 +589,11 @@ pub fn visit_table_factor<'ast, V: Visit<'ast> + ?Sized>(
             args,
             with_hints,
         } => visitor.visit_table_table_factor(name, alias.as_ref(), args, with_hints),
-        TableFactor::Derived { subquery, alias } => {
-            visitor.visit_derived_table_factor(subquery, alias.as_ref())
-        }
+        TableFactor::Derived {
+            lateral,
+            subquery,
+            alias,
+        } => visitor.visit_derived_table_factor(*lateral, subquery, alias.as_ref()),
         TableFactor::NestedJoin { base, joins } => {
             visitor.visit_nested_join_table_factor(base, joins)
         }
@@ -576,15 +604,15 @@ pub fn visit_table_table_factor<'ast, V: Visit<'ast> + ?Sized>(
     visitor: &mut V,
     name: &'ast SQLObjectName,
     alias: Option<&'ast TableAlias>,
-    args: &'ast Vec<ASTNode>,
-    with_hints: &'ast Vec<ASTNode>,
+    args: &'ast [ASTNode],
+    with_hints: &'ast [ASTNode],
 ) {
     visitor.visit_object_name(name);
-    if let Some(ident) = alias {
-        visitor.visit_table_alias(ident);
-    }
     for expr in args {
         visitor.visit_expr(expr);
+    }
+    if let Some(alias) = alias {
+        visitor.visit_table_alias(alias);
     }
     for expr in with_hints {
         visitor.visit_expr(expr);
@@ -593,20 +621,20 @@ pub fn visit_table_table_factor<'ast, V: Visit<'ast> + ?Sized>(
 
 pub fn visit_derived_table_factor<'ast, V: Visit<'ast> + ?Sized>(
     visitor: &mut V,
+    _lateral: bool,
     subquery: &'ast SQLQuery,
     alias: Option<&'ast TableAlias>,
 ) {
     visitor.visit_subquery(subquery);
-    match alias {
-        Some(ident) => visitor.visit_table_alias(ident),
-        None => (),
+    if let Some(alias) = alias {
+        visitor.visit_table_alias(alias);
     }
 }
 
 pub fn visit_nested_join_table_factor<'ast, V: Visit<'ast> + ?Sized>(
     visitor: &mut V,
     base: &'ast TableFactor,
-    joins: &'ast Vec<Join>,
+    joins: &'ast [Join],
 ) {
     visitor.visit_table_factor(base);
     for join in joins {
@@ -614,13 +642,10 @@ pub fn visit_nested_join_table_factor<'ast, V: Visit<'ast> + ?Sized>(
     }
 }
 
-pub fn visit_table_alias<'ast, V: Visit<'ast> + ?Sized>(
-    visitor: &mut V,
-    table_alias: &'ast TableAlias,
-) {
-    visitor.visit_identifier(&table_alias.name);
-    for column in &table_alias.columns {
-        visitor.visit_identifier(column);
+pub fn visit_table_alias<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, alias: &'ast TableAlias) {
+    visitor.visit_ident(&alias.name);
+    for column in &alias.columns {
+        visitor.visit_ident(column);
     }
 }
 
@@ -647,7 +672,7 @@ pub fn visit_join_constraint<'ast, V: Visit<'ast> + ?Sized>(
         JoinConstraint::On(expr) => visitor.visit_expr(expr),
         JoinConstraint::Using(idents) => {
             for ident in idents {
-                visitor.visit_identifier(ident);
+                visitor.visit_ident(ident);
             }
         }
         JoinConstraint::Natural => (),
@@ -658,7 +683,7 @@ pub fn visit_where<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, expr: &'ast A
     visitor.visit_expr(expr);
 }
 
-pub fn visit_group_by<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, exprs: &'ast Vec<ASTNode>) {
+pub fn visit_group_by<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, exprs: &'ast [ASTNode]) {
     for expr in exprs {
         visitor.visit_expr(expr);
     }
@@ -707,7 +732,7 @@ pub fn visit_limit<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, expr: &'ast A
 
 pub fn visit_expr<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, expr: &'ast ASTNode) {
     match expr {
-        ASTNode::SQLIdentifier(ident) => visitor.visit_identifier(ident),
+        ASTNode::SQLIdentifier(ident) => visitor.visit_ident(ident),
         ASTNode::SQLWildcard => visitor.visit_wildcard(),
         ASTNode::SQLQualifiedWildcard(idents) => visitor.visit_qualified_wildcard(idents),
         ASTNode::SQLCompoundIdentifier(idents) => visitor.visit_compound_identifier(idents),
@@ -731,8 +756,8 @@ pub fn visit_expr<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, expr: &'ast AS
         } => visitor.visit_between(expr, low, high, *negated),
         ASTNode::SQLBinaryExpr { left, op, right } => visitor.visit_binary_expr(left, op, right),
         ASTNode::SQLCast { expr, data_type } => visitor.visit_cast(expr, data_type),
-        ASTNode::SQLExtract { field, expr } => visitor.visit_extract(field, expr),
         ASTNode::SQLCollate { expr, collation } => visitor.visit_collate(expr, collation),
+        ASTNode::SQLExtract { field, expr } => visitor.visit_extract(field, expr),
         ASTNode::SQLNested(expr) => visitor.visit_nested(expr),
         ASTNode::SQLUnary { expr, operator } => visitor.visit_unary(expr, operator),
         ASTNode::SQLValue(val) => visitor.visit_value(val),
@@ -766,7 +791,7 @@ pub fn visit_expression_with_alias<'ast, V: Visit<'ast> + ?Sized>(
     alias: &'ast SQLIdent,
 ) {
     visitor.visit_expr(expr);
-    visitor.visit_identifier(alias);
+    visitor.visit_ident(alias);
 }
 
 pub fn visit_object_name<'ast, V: Visit<'ast> + ?Sized>(
@@ -774,25 +799,25 @@ pub fn visit_object_name<'ast, V: Visit<'ast> + ?Sized>(
     object_name: &'ast SQLObjectName,
 ) {
     for ident in &object_name.0 {
-        visitor.visit_identifier(ident)
+        visitor.visit_ident(ident)
     }
 }
 
 pub fn visit_compound_identifier<'ast, V: Visit<'ast> + ?Sized>(
     visitor: &mut V,
-    idents: &'ast Vec<SQLIdent>,
+    idents: &'ast [SQLIdent],
 ) {
     for ident in idents {
-        visitor.visit_identifier(ident);
+        visitor.visit_ident(ident);
     }
 }
 
 pub fn visit_qualified_wildcard<'ast, V: Visit<'ast> + ?Sized>(
     visitor: &mut V,
-    idents: &'ast Vec<SQLIdent>,
+    idents: &'ast [SQLIdent],
 ) {
     for ident in idents {
-        visitor.visit_identifier(ident);
+        visitor.visit_ident(ident);
     }
 }
 
@@ -807,7 +832,7 @@ pub fn visit_is_not_null<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, expr: &
 pub fn visit_in_list<'ast, V: Visit<'ast> + ?Sized>(
     visitor: &mut V,
     expr: &'ast ASTNode,
-    list: &'ast Vec<ASTNode>,
+    list: &'ast [ASTNode],
     _negated: bool,
 ) {
     visitor.visit_expr(expr);
@@ -858,15 +883,6 @@ pub fn visit_cast<'ast, V: Visit<'ast> + ?Sized>(
     visitor.visit_type(data_type);
 }
 
-pub fn visit_extract<'ast, V: Visit<'ast> + ?Sized>(
-    visitor: &mut V,
-    field: &'ast SQLDateTimeField,
-    expr: &'ast ASTNode,
-) {
-    visitor.visit_date_time_field(field);
-    visitor.visit_expr(expr);
-}
-
 pub fn visit_collate<'ast, V: Visit<'ast> + ?Sized>(
     visitor: &mut V,
     expr: &'ast ASTNode,
@@ -874,6 +890,15 @@ pub fn visit_collate<'ast, V: Visit<'ast> + ?Sized>(
 ) {
     visitor.visit_expr(expr);
     visitor.visit_object_name(collation);
+}
+
+pub fn visit_extract<'ast, V: Visit<'ast> + ?Sized>(
+    visitor: &mut V,
+    field: &'ast SQLDateTimeField,
+    expr: &'ast ASTNode,
+) {
+    visitor.visit_date_time_field(field);
+    visitor.visit_expr(expr);
 }
 
 pub fn visit_nested<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, expr: &'ast ASTNode) {
@@ -928,8 +953,8 @@ pub fn visit_window_frame<'ast, V: Visit<'ast> + ?Sized>(
 pub fn visit_case<'ast, V: Visit<'ast> + ?Sized>(
     visitor: &mut V,
     operand: Option<&'ast ASTNode>,
-    conditions: &'ast Vec<ASTNode>,
-    results: &'ast Vec<ASTNode>,
+    conditions: &'ast [ASTNode],
+    results: &'ast [ASTNode],
     else_result: Option<&'ast ASTNode>,
 ) {
     if let Some(operand) = operand {
@@ -941,9 +966,8 @@ pub fn visit_case<'ast, V: Visit<'ast> + ?Sized>(
     for res in results {
         visitor.visit_expr(res);
     }
-    match else_result {
-        Some(expr) => visitor.visit_expr(expr),
-        _ => (),
+    if let Some(else_result) = else_result {
+        visitor.visit_expr(else_result);
     }
 }
 
@@ -958,23 +982,23 @@ pub fn visit_subquery<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, subquery: 
 pub fn visit_insert<'ast, V: Visit<'ast> + ?Sized>(
     visitor: &mut V,
     table_name: &'ast SQLObjectName,
-    columns: &'ast Vec<SQLIdent>,
+    columns: &'ast [SQLIdent],
     source: &'ast SQLQuery,
 ) {
     visitor.visit_object_name(table_name);
     for column in columns {
-        visitor.visit_identifier(column);
+        visitor.visit_ident(column);
     }
     visitor.visit_query(source);
 }
 
-pub fn visit_values<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, rows: &'ast SQLValues) {
-    for row in &rows.0 {
+pub fn visit_values<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, values: &'ast SQLValues) {
+    for row in &values.0 {
         visitor.visit_values_row(row)
     }
 }
 
-pub fn visit_values_row<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, row: &'ast Vec<ASTNode>) {
+pub fn visit_values_row<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, row: &'ast [ASTNode]) {
     for expr in row {
         visitor.visit_expr(expr)
     }
@@ -983,19 +1007,19 @@ pub fn visit_values_row<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, row: &'a
 pub fn visit_copy<'ast, V: Visit<'ast> + ?Sized>(
     visitor: &mut V,
     table_name: &'ast SQLObjectName,
-    columns: &'ast Vec<SQLIdent>,
-    values: &'ast Vec<Option<String>>,
+    columns: &'ast [SQLIdent],
+    values: &'ast [Option<String>],
 ) {
     visitor.visit_object_name(table_name);
     for column in columns {
-        visitor.visit_identifier(column);
+        visitor.visit_ident(column);
     }
     visitor.visit_copy_values(values);
 }
 
 pub fn visit_copy_values<'ast, V: Visit<'ast> + ?Sized>(
     visitor: &mut V,
-    values: &'ast Vec<Option<String>>,
+    values: &'ast [Option<String>],
 ) {
     for value in values {
         visitor.visit_copy_values_row(value.as_ref());
@@ -1005,16 +1029,15 @@ pub fn visit_copy_values<'ast, V: Visit<'ast> + ?Sized>(
 pub fn visit_update<'ast, V: Visit<'ast> + ?Sized>(
     visitor: &mut V,
     table_name: &'ast SQLObjectName,
-    assignments: &'ast Vec<SQLAssignment>,
+    assignments: &'ast [SQLAssignment],
     selection: Option<&'ast ASTNode>,
 ) {
     visitor.visit_object_name(&table_name);
     for assignment in assignments {
         visitor.visit_assignment(assignment);
     }
-    match selection {
-        Some(ref exprs) => visitor.visit_where(exprs),
-        None => (),
+    if let Some(selection) = selection {
+        visitor.visit_where(selection);
     }
 }
 
@@ -1022,7 +1045,7 @@ pub fn visit_assignment<'ast, V: Visit<'ast> + ?Sized>(
     visitor: &mut V,
     assignment: &'ast SQLAssignment,
 ) {
-    visitor.visit_identifier(&assignment.id);
+    visitor.visit_ident(&assignment.id);
     visitor.visit_expr(&assignment.value);
 }
 
@@ -1032,9 +1055,8 @@ pub fn visit_delete<'ast, V: Visit<'ast> + ?Sized>(
     selection: Option<&'ast ASTNode>,
 ) {
     visitor.visit_object_name(table_name);
-    match selection {
-        Some(expr) => visitor.visit_where(expr),
-        None => (),
+    if let Some(selection) = selection {
+        visitor.visit_where(selection);
     }
 }
 
@@ -1078,8 +1100,15 @@ pub fn visit_create_data_sink<'ast, V: Visit<'ast> + ?Sized>(
     }
 }
 
-pub fn visit_drop<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, drop: &'ast SQLDrop) {
-    for name in &drop.names {
+pub fn visit_drop<'ast, V: Visit<'ast> + ?Sized>(
+    visitor: &mut V,
+    object_type: &'ast SQLObjectType,
+    _if_exists: bool,
+    names: &'ast [SQLObjectName],
+    _cascade: bool,
+) {
+    visitor.visit_object_type(object_type);
+    for name in names {
         visitor.visit_object_name(name);
     }
 }
@@ -1087,27 +1116,27 @@ pub fn visit_drop<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, drop: &'ast SQ
 pub fn visit_create_view<'ast, V: Visit<'ast> + ?Sized>(
     visitor: &mut V,
     name: &'ast SQLObjectName,
-    columns: &'ast Vec<SQLIdent>,
+    columns: &'ast [SQLIdent],
     query: &'ast SQLQuery,
     _materialized: bool,
-    with_options: &'ast Vec<SQLOption>,
+    with_options: &'ast [SQLOption],
 ) {
     visitor.visit_object_name(name);
     for column in columns {
-        visitor.visit_identifier(column);
+        visitor.visit_ident(column);
     }
-    visitor.visit_query(&query);
     for option in with_options {
         visitor.visit_option(option);
     }
+    visitor.visit_query(&query);
 }
 
 pub fn visit_create_table<'ast, V: Visit<'ast> + ?Sized>(
     visitor: &mut V,
     name: &'ast SQLObjectName,
-    columns: &'ast Vec<SQLColumnDef>,
-    constraints: &'ast Vec<SQLTableConstraint>,
-    with_options: &'ast Vec<SQLOption>,
+    columns: &'ast [SQLColumnDef],
+    constraints: &'ast [TableConstraint],
+    with_options: &'ast [SQLOption],
     _external: bool,
     file_format: &'ast Option<FileFormat>,
     location: &'ast Option<String>,
@@ -1117,7 +1146,7 @@ pub fn visit_create_table<'ast, V: Visit<'ast> + ?Sized>(
         visitor.visit_column_def(column);
     }
     for constraint in constraints {
-        visitor.visit_table_constraint(constraint)
+        visitor.visit_table_constraint(constraint);
     }
     for option in with_options {
         visitor.visit_option(option);
@@ -1130,135 +1159,168 @@ pub fn visit_create_table<'ast, V: Visit<'ast> + ?Sized>(
     }
 }
 
-pub fn visit_table_constraint<'ast, V: Visit<'ast> + ?Sized>(
-    visitor: &mut V,
-    constraint: &'ast SQLTableConstraint,
-) {
-    use SQLTableConstraint::*;
-    match constraint {
-        Check { name, expr } => {
-            if let Some(name) = name {
-                visitor.visit_identifier(name);
-            }
-            visitor.visit_expr(expr)
-        }
-        Unique { name, columns } | PrimaryKey { name, columns } => {
-            if let Some(name) = name {
-                visitor.visit_identifier(name);
-            }
-            for column in columns {
-                visitor.visit_identifier(column)
-            }
-        }
-    }
-}
-
 pub fn visit_column_def<'ast, V: Visit<'ast> + ?Sized>(
     visitor: &mut V,
     column_def: &'ast SQLColumnDef,
 ) {
-    visitor.visit_identifier(&column_def.name);
+    visitor.visit_ident(&column_def.name);
     visitor.visit_type(&column_def.data_type);
+    if let Some(collation) = &column_def.collation {
+        visitor.visit_object_name(&collation);
+    }
     for constraint in &column_def.constraints {
-        visitor.visit_column_constraint(constraint)
+        visitor.visit_column_constraint(constraint);
     }
 }
 
 pub fn visit_column_constraint<'ast, V: Visit<'ast> + ?Sized>(
     visitor: &mut V,
-    constraint: &'ast SQLColumnConstraint,
+    constraint: &'ast ColumnConstraint,
 ) {
-    use SQLColumnConstraint::*;
     match constraint {
-        Check { name, expr } => {
+        ColumnConstraint::Null
+        | ColumnConstraint::NotNull
+        | ColumnConstraint::Unique { name: None, .. } => (),
+        ColumnConstraint::Default { name, expr } => {
             if let Some(name) = name {
-                visitor.visit_identifier(name);
+                visitor.visit_ident(name);
             }
             visitor.visit_expr(expr);
         }
-        Default(expr) => visitor.visit_expr(expr),
-        Unique(Some(ident)) | PrimaryKey(Some(ident)) => visitor.visit_identifier(ident),
-        Unique(None) | PrimaryKey(None) | Null | NotNull => (),
+        ColumnConstraint::Unique {
+            name: Some(name), ..
+        } => visitor.visit_ident(name),
+        ColumnConstraint::ForeignKey {
+            name,
+            foreign_table,
+            referred_columns,
+        } => {
+            if let Some(name) = name {
+                visitor.visit_ident(name);
+            }
+            visitor.visit_object_name(foreign_table);
+            for column in referred_columns {
+                visitor.visit_ident(column);
+            }
+        }
+        ColumnConstraint::Check { name, expr } => {
+            if let Some(name) = name {
+                visitor.visit_ident(name);
+            }
+            visitor.visit_expr(expr);
+        }
     }
 }
 
 pub fn visit_option<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, option: &'ast SQLOption) {
-    visitor.visit_identifier(&option.name);
+    visitor.visit_ident(&option.name);
     visitor.visit_value(&option.value);
 }
 
 pub fn visit_alter_table<'ast, V: Visit<'ast> + ?Sized>(
     visitor: &mut V,
     name: &'ast SQLObjectName,
-    operation: &'ast AlterOperation,
+    operation: &'ast AlterTableOperation,
 ) {
     visitor.visit_object_name(name);
-    visitor.visit_alter_operation(operation);
+    visitor.visit_alter_table_operation(operation);
 }
 
-pub fn visit_alter_operation<'ast, V: Visit<'ast> + ?Sized>(
+pub fn visit_alter_table_operation<'ast, V: Visit<'ast> + ?Sized>(
     visitor: &mut V,
-    operation: &'ast AlterOperation,
+    operation: &'ast AlterTableOperation,
 ) {
     match operation {
-        AlterOperation::AddConstraint(table_key) => visitor.visit_alter_add_constraint(table_key),
-        AlterOperation::RemoveConstraint { name } => visitor.visit_alter_remove_constraint(name),
+        AlterTableOperation::AddConstraint(table_constraint) => {
+            visitor.visit_alter_add_constraint(table_constraint)
+        }
+        AlterTableOperation::DropConstraint { name } => visitor.visit_alter_drop_constraint(name),
     }
 }
 
 pub fn visit_alter_add_constraint<'ast, V: Visit<'ast> + ?Sized>(
     visitor: &mut V,
-    table_key: &'ast TableKey,
+    table_constraint: &'ast TableConstraint,
 ) {
-    visitor.visit_table_key(table_key);
+    visitor.visit_table_constraint(table_constraint);
 }
 
-pub fn visit_table_key<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, table_key: &'ast TableKey) {
-    match table_key {
-        TableKey::PrimaryKey(key) => visitor.visit_primary_key(key),
-        TableKey::UniqueKey(key) => visitor.visit_unique_key(key),
-        TableKey::Key(key) => visitor.visit_key(key),
-        TableKey::ForeignKey {
-            key,
+pub fn visit_table_constraint<'ast, V: Visit<'ast> + ?Sized>(
+    visitor: &mut V,
+    table_constraint: &'ast TableConstraint,
+) {
+    match table_constraint {
+        TableConstraint::Unique {
+            name,
+            columns,
+            is_primary,
+        } => visitor.visit_table_constraint_unique(name.as_ref(), columns, *is_primary),
+        TableConstraint::ForeignKey {
+            name,
+            columns,
             foreign_table,
             referred_columns,
-        } => visitor.visit_foreign_key(key, foreign_table, referred_columns),
+        } => visitor.visit_table_constraint_foreign_key(
+            name.as_ref(),
+            columns,
+            foreign_table,
+            referred_columns,
+        ),
+        TableConstraint::Check { name, expr } => {
+            visitor.visit_table_constraint_check(name.as_ref(), expr)
+        }
     }
 }
 
-pub fn visit_primary_key<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, key: &'ast Key) {
-    visitor.visit_key(key)
-}
-
-pub fn visit_unique_key<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, key: &'ast Key) {
-    visitor.visit_key(key)
-}
-
-pub fn visit_foreign_key<'ast, V: Visit<'ast> + ?Sized>(
+pub fn visit_table_constraint_unique<'ast, V: Visit<'ast> + ?Sized>(
     visitor: &mut V,
-    key: &'ast Key,
-    foreign_table: &'ast SQLObjectName,
-    referred_columns: &'ast Vec<SQLIdent>,
+    name: Option<&'ast SQLIdent>,
+    columns: &'ast [SQLIdent],
+    _is_primary: bool,
 ) {
-    visitor.visit_key(key);
+    if let Some(name) = name {
+        visitor.visit_ident(name);
+    }
+    for column in columns {
+        visitor.visit_ident(column);
+    }
+}
+
+pub fn visit_table_constraint_foreign_key<'ast, V: Visit<'ast> + ?Sized>(
+    visitor: &mut V,
+    name: Option<&'ast SQLIdent>,
+    columns: &'ast [SQLIdent],
+    foreign_table: &'ast SQLObjectName,
+    referred_columns: &'ast [SQLIdent],
+) {
+    if let Some(name) = name {
+        visitor.visit_ident(name);
+    }
+    for column in columns {
+        visitor.visit_ident(column);
+    }
     visitor.visit_object_name(foreign_table);
     for column in referred_columns {
-        visitor.visit_identifier(column);
+        visitor.visit_ident(column);
     }
 }
 
-pub fn visit_key<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, key: &'ast Key) {
-    visitor.visit_identifier(&key.name);
-    for column in &key.columns {
-        visitor.visit_identifier(column);
+pub fn visit_table_constraint_check<'ast, V: Visit<'ast> + ?Sized>(
+    visitor: &mut V,
+    name: Option<&'ast SQLIdent>,
+    expr: &'ast ASTNode,
+) {
+    if let Some(name) = name {
+        visitor.visit_ident(name);
     }
+    visitor.visit_expr(expr);
 }
 
-pub fn visit_alter_remove_constraint<'ast, V: Visit<'ast> + ?Sized>(
+pub fn visit_alter_drop_constraint<'ast, V: Visit<'ast> + ?Sized>(
     visitor: &mut V,
     name: &'ast SQLIdent,
 ) {
-    visitor.visit_identifier(name);
+    visitor.visit_ident(name);
 }
 
 pub fn visit_peek<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, name: &'ast SQLObjectName) {
@@ -1284,7 +1346,7 @@ mod tests {
         }
 
         impl<'a> Visit<'a> for Visitor<'a> {
-            fn visit_identifier(&mut self, ident: &'a SQLIdent) {
+            fn visit_ident(&mut self, ident: &'a SQLIdent) {
                 self.seen_idents.push(ident);
             }
         }
@@ -1292,9 +1354,48 @@ mod tests {
         let stmts = Parser::parse_sql(
             &GenericSqlDialect {},
             r#"
-            SELECT *, foo.*, bar FROM baz JOIN zab ON baz.a = zab.b WHERE q;
-            INSERT INTO db.bazzle (a, b, c) VALUES (1, 2, 3);
-            DELETE FROM db2.razzle WHERE z = y AND Y = Z AND w BETWEEN 2 AND x;
+            WITH a01 AS (SELECT 1)
+                SELECT *, a02.*, a03 AS a04
+                FROM (SELECT * FROM a05) a06
+                JOIN a07 ON a08.a09 = a10.a11
+                WHERE a12
+                GROUP BY a13
+                HAVING a14
+            UNION ALL
+                SELECT a15 IS NULL
+                    AND a16 IS NOT NULL
+                    AND a17 IN (a18)
+                    AND a19 IN (SELECT * FROM a20)
+                    AND CAST(a21 AS int)
+                    AND (a22)
+                    AND NOT a23
+                    AND a24(a25)
+                    AND CASE a26 WHEN a27 THEN a28 ELSE a29 END
+                    AND a30 BETWEEN a31 AND a32
+                    AND a33 COLLATE a34 = a35
+                    AND (SELECT a36)
+                FROM a37(a38) AS a39 WITH (a40)
+                LEFT JOIN a41 ON false
+                RIGHT JOIN a42 ON false
+                FULL JOIN a43 ON false
+                JOIN a44 (a45) USING (a46)
+            EXCEPT
+                (SELECT a47(a48) OVER (PARTITION BY a49 ORDER BY a50 ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING))
+            ORDER BY a51
+            LIMIT 1;
+            UPDATE b01 SET b02 = b03;
+            INSERT INTO c01 (c02) VALUES (c03);
+            INSERT INTO c04 SELECT * FROM c05;
+            DELETE FROM d01 WHERE d02;
+            CREATE TABLE e01 (e02 INT) WITH (e03 = 1);
+            CREATE VIEW f01 (f02) WITH (f03 = 1) AS SELECT * FROM f04;
+            ALTER TABLE g01 ADD CONSTRAINT g02 PRIMARY KEY (g03);
+            ALTER TABLE h01 ADD CONSTRAINT h02 FOREIGN KEY (h03) REFERENCES h04 (h05);
+            ALTER TABLE i01 ADD CONSTRAINT i02 UNIQUE (i03);
+            DROP TABLE j01;
+            DROP VIEW k01;
+            COPY l01 (l02) FROM stdin;
+            1
 "#
             .into(),
         )?;
@@ -1306,11 +1407,26 @@ mod tests {
             visitor.visit_statement(stmt);
         }
 
+        #[rustfmt::skip]  // rustfmt loses the structure of the expected vector by wrapping all lines
         assert_eq!(
             visitor.seen_idents,
-            &[
-                "foo", "bar", "baz", "zab", "baz", "a", "zab", "b", "q", "db", "bazzle", "a", "b",
-                "c", "db2", "razzle", "z", "y", "Y", "Z", "w", "x"
+            vec![
+                "a01", "a02", "a03", "a04", "a05", "a06", "a07", "a08", "a09", "a10", "a11", "a12",
+                "a13", "a14", "a15", "a16", "a17", "a18", "a19", "a20", "a21", "a22", "a23", "a24",
+                "a25", "a26", "a27", "a28", "a29", "a30", "a31", "a32", "a33", "a34", "a35", "a36",
+                "a37", "a38", "a39", "a40", "a41", "a42", "a43", "a44", "a45", "a46", "a47", "a48",
+                "a49", "a50", "a51",
+                "b01", "b02", "b03",
+                "c01", "c02", "c03", "c04", "c05",
+                "d01", "d02",
+                "e01", "e02", "e03",
+                "f01", "f02", "f03", "f04",
+                "g01", "g02", "g03",
+                "h01", "h02", "h03", "h04", "h05",
+                "i01", "i02", "i03",
+                "j01",
+                "k01",
+                "l01", "l02",
             ]
         );
 

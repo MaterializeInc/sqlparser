@@ -11,11 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
-// Additional modifications to this file may have been made by Timely
-// Data, Inc. See the version control log for precise modification
-// information. The derived work is copyright 2019 Timely Data and
-// is not licensed under the terms of the above license.
 
 //! SQL Tokenizer
 //!
@@ -34,7 +29,7 @@ use super::dialect::Dialect;
 pub enum Token {
     /// A keyword (like SELECT) or an optionally quoted SQL identifier
     SQLWord(SQLWord),
-    /// Numeric literal
+    /// An unsigned numeric literal
     Number(String),
     /// A character that could not be tokenized
     Char(char),
@@ -294,11 +289,13 @@ impl<'a> Tokenizer<'a> {
                         }
                     }
                 }
+                // The spec only allows an uppercase 'X' to introduce a hex
+                // string, but PostgreSQL, at least, allows a lowercase 'x' too.
                 x @ 'x' | x @ 'X' => {
                     chars.next(); // consume, to check the next char
                     match chars.peek() {
                         Some('\'') => {
-                            // X'...' - a <national character string literal>
+                            // X'...' - a <binary string literal>
                             let s = self.tokenize_single_quoted_string(chars);
                             Ok(Some(Token::HexStringLiteral(s)))
                         }

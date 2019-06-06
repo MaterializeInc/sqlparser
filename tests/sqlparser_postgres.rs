@@ -1,22 +1,3 @@
-// Copyright 2018 Grove Enterprises LLC
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-// http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-//
-// Additional modifications to this file may have been made by Timely
-// Data, Inc. See the version control log for precise modification
-// information. The derived work is copyright 2019 Timely Data and
-// is not licensed under the terms of the above license.
-
 #![warn(clippy::all)]
 //! Test SQL syntax specific to PostgreSQL. The parser based on the
 //! generic dialect is also tested (on the inputs it can handle).
@@ -31,13 +12,14 @@ fn parse_create_table_with_defaults() {
             customer_id integer DEFAULT nextval(public.customer_customer_id_seq),
             store_id smallint NOT NULL,
             first_name character varying(45) NOT NULL,
-            last_name character varying(45) NOT NULL,
+            last_name character varying(45) COLLATE \"es_ES\" NOT NULL,
             email character varying(50),
             address_id smallint NOT NULL,
             activebool boolean DEFAULT true NOT NULL,
             create_date date DEFAULT now()::text NOT NULL,
             last_update timestamp without time zone DEFAULT now() NOT NULL,
-            active integer NOT NULL)";
+            active integer NOT NULL
+    ) WITH (fillfactor = 20, user_catalog_table = true, autovacuum_vacuum_threshold = 100)";
     match pg_and_generic().one_statement_parses_to(sql, "") {
         SQLStatement::SQLCreateTable {
             name,
@@ -55,68 +37,104 @@ fn parse_create_table_with_defaults() {
                     SQLColumnDef {
                         name: "customer_id".into(),
                         data_type: SQLType::Int,
-                        constraints: vec![SQLColumnConstraint::Default(
-                            pg().verified_expr("nextval(public.customer_customer_id_seq)")
-                        )],
+                        collation: None,
+                        constraints: vec![ColumnConstraint::Default {
+                            name: None,
+                            expr: pg().verified_expr("nextval(public.customer_customer_id_seq)")
+                        }],
                     },
                     SQLColumnDef {
                         name: "store_id".into(),
                         data_type: SQLType::SmallInt,
-                        constraints: vec![SQLColumnConstraint::NotNull],
+                        collation: None,
+                        constraints: vec![ColumnConstraint::NotNull],
                     },
                     SQLColumnDef {
                         name: "first_name".into(),
                         data_type: SQLType::Varchar(Some(45)),
-                        constraints: vec![SQLColumnConstraint::NotNull],
+                        collation: None,
+                        constraints: vec![ColumnConstraint::NotNull],
                     },
                     SQLColumnDef {
                         name: "last_name".into(),
                         data_type: SQLType::Varchar(Some(45)),
-                        constraints: vec![SQLColumnConstraint::NotNull],
+                        collation: Some(SQLObjectName(vec!["\"es_ES\"".into()])),
+                        constraints: vec![ColumnConstraint::NotNull],
                     },
                     SQLColumnDef {
                         name: "email".into(),
                         data_type: SQLType::Varchar(Some(50)),
+                        collation: None,
                         constraints: vec![],
                     },
                     SQLColumnDef {
                         name: "address_id".into(),
                         data_type: SQLType::SmallInt,
-                        constraints: vec![SQLColumnConstraint::NotNull],
+                        collation: None,
+                        constraints: vec![ColumnConstraint::NotNull],
                     },
                     SQLColumnDef {
                         name: "activebool".into(),
                         data_type: SQLType::Boolean,
+                        collation: None,
                         constraints: vec![
-                            SQLColumnConstraint::Default(ASTNode::SQLValue(Value::Boolean(true))),
-                            SQLColumnConstraint::NotNull
+                            ColumnConstraint::Default {
+                                name: None,
+                                expr: ASTNode::SQLValue(Value::Boolean(true)),
+                            },
+                            ColumnConstraint::NotNull
                         ],
                     },
                     SQLColumnDef {
                         name: "create_date".into(),
                         data_type: SQLType::Date,
+                        collation: None,
                         constraints: vec![
-                            SQLColumnConstraint::Default(pg().verified_expr("CAST(now() AS text)")),
-                            SQLColumnConstraint::NotNull
+                            ColumnConstraint::Default {
+                                name: None,
+                                expr: pg().verified_expr("CAST(now() AS text)")
+                            },
+                            ColumnConstraint::NotNull
                         ],
                     },
                     SQLColumnDef {
                         name: "last_update".into(),
                         data_type: SQLType::Timestamp,
+                        collation: None,
                         constraints: vec![
-                            SQLColumnConstraint::Default(pg().verified_expr("now()")),
-                            SQLColumnConstraint::NotNull
+                            ColumnConstraint::Default {
+                                name: None,
+                                expr: pg().verified_expr("now()")
+                            },
+                            ColumnConstraint::NotNull
                         ],
                     },
                     SQLColumnDef {
                         name: "active".into(),
                         data_type: SQLType::Int,
-                        constraints: vec![SQLColumnConstraint::NotNull],
+                        collation: None,
+                        constraints: vec![ColumnConstraint::NotNull],
                     },
                 ]
             );
-            assert_eq!(constraints, vec![]);
-            assert_eq!(with_options, vec![]);
+            assert!(constraints.is_empty());
+            assert_eq!(
+                with_options,
+                vec![
+                    SQLOption {
+                        name: "fillfactor".into(),
+                        value: Value::Long(20)
+                    },
+                    SQLOption {
+                        name: "user_catalog_table".into(),
+                        value: Value::Boolean(true)
+                    },
+                    SQLOption {
+                        name: "autovacuum_vacuum_threshold".into(),
+                        value: Value::Long(100)
+                    },
+                ]
+            );
         }
         _ => unreachable!(),
     }
@@ -138,7 +156,7 @@ fn parse_create_table_from_pg_dump() {
             release_year public.year,
             active integer
         )";
-    let _ = pg().one_statement_parses_to(sql, "CREATE TABLE public.customer (\
+    pg().one_statement_parses_to(sql, "CREATE TABLE public.customer (\
             customer_id int DEFAULT nextval(CAST('public.customer_customer_id_seq' AS regclass)) NOT NULL, \
             store_id smallint NOT NULL, \
             first_name character varying(45) NOT NULL, \
@@ -163,7 +181,7 @@ fn parse_create_table_with_inherit() {
                value text[], \
                use_metric boolean DEFAULT true\
                )";
-    let _ = pg().verified_stmt(sql);
+    pg().verified_stmt(sql);
 }
 
 #[test]

@@ -1,22 +1,3 @@
-// Copyright 2018 Grove Enterprises LLC
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-// http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-//
-// Additional modifications to this file may have been made by Timely
-// Data, Inc. See the version control log for precise modification
-// information. The derived work is copyright 2019 Timely Data and
-// is not licensed under the terms of the above license.
-
 use super::*;
 
 /// The most complete variant of a `SELECT` query expression, optionally
@@ -29,8 +10,12 @@ pub struct SQLQuery {
     pub body: SQLSetExpr,
     /// ORDER BY
     pub order_by: Vec<SQLOrderByExpr>,
-    /// LIMIT
+    /// LIMIT { <N> | ALL }
     pub limit: Option<ASTNode>,
+    /// OFFSET <N> { ROW | ROWS }
+    pub offset: Option<ASTNode>,
+    /// FETCH { FIRST | NEXT } <N> [ PERCENT ] { ROW | ROWS } | { ONLY | WITH TIES }
+    pub fetch: Option<Fetch>,
 }
 
 impl ToString for SQLQuery {
@@ -45,6 +30,13 @@ impl ToString for SQLQuery {
         }
         if let Some(ref limit) = self.limit {
             s += &format!(" LIMIT {}", limit.to_string());
+        }
+        if let Some(ref offset) = self.offset {
+            s += &format!(" OFFSET {} ROWS", offset.to_string());
+        }
+        if let Some(ref fetch) = self.fetch {
+            s.push(' ');
+            s += &fetch.to_string();
         }
         s
     }
@@ -75,7 +67,7 @@ impl ToString for SQLSetExpr {
         match self {
             SQLSetExpr::Select(s) => s.to_string(),
             SQLSetExpr::Query(q) => format!("({})", q.to_string()),
-            SQLSetExpr::Values(v) => format!("VALUES {}", v.to_string()),
+            SQLSetExpr::Values(v) => v.to_string(),
             SQLSetExpr::SetOperation {
                 left,
                 right,
@@ -117,7 +109,6 @@ impl ToString for SQLSetOperator {
 /// to a set operation like `UNION`.
 #[derive(Debug, Clone, PartialEq, Hash)]
 pub struct SQLSelect {
-    pub all: bool,
     pub distinct: bool,
     /// projection expressions
     pub projection: Vec<SQLSelectItem>,
@@ -136,8 +127,7 @@ pub struct SQLSelect {
 impl ToString for SQLSelect {
     fn to_string(&self) -> String {
         let mut s = format!(
-            "SELECT{}{} {}",
-            if self.all { " ALL" } else { "" },
+            "SELECT{} {}",
             if self.distinct { " DISTINCT" } else { "" },
             comma_separated_string(&self.projection)
         );
@@ -221,6 +211,7 @@ pub enum TableFactor {
         with_hints: Vec<ASTNode>,
     },
     Derived {
+        lateral: bool,
         subquery: Box<SQLQuery>,
         alias: Option<TableAlias>,
     },
@@ -251,8 +242,16 @@ impl ToString for TableFactor {
                 }
                 s
             }
-            TableFactor::Derived { subquery, alias } => {
-                let mut s = format!("({})", subquery.to_string());
+            TableFactor::Derived {
+                lateral,
+                subquery,
+                alias,
+            } => {
+                let mut s = String::new();
+                if *lateral {
+                    s += "LATERAL ";
+                }
+                s += &format!("({})", subquery.to_string());
                 if let Some(alias) = alias {
                     s += &format!(" AS {}", alias.to_string());
                 }
@@ -372,6 +371,30 @@ impl ToString for SQLOrderByExpr {
 }
 
 #[derive(Debug, Clone, PartialEq, Hash)]
+pub struct Fetch {
+    pub with_ties: bool,
+    pub percent: bool,
+    pub quantity: Option<ASTNode>,
+}
+
+impl ToString for Fetch {
+    fn to_string(&self) -> String {
+        let extension = if self.with_ties { "WITH TIES" } else { "ONLY" };
+        if let Some(ref quantity) = self.quantity {
+            let percent = if self.percent { " PERCENT" } else { "" };
+            format!(
+                "FETCH FIRST {}{} ROWS {}",
+                quantity.to_string(),
+                percent,
+                extension
+            )
+        } else {
+            format!("FETCH FIRST ROWS {}", extension)
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Hash)]
 pub struct SQLValues(pub Vec<Vec<ASTNode>>);
 
 impl ToString for SQLValues {
@@ -380,6 +403,6 @@ impl ToString for SQLValues {
             .0
             .iter()
             .map(|row| format!("({})", comma_separated_string(row)));
-        comma_separated_string(rows)
+        format!("VALUES {}", comma_separated_string(rows))
     }
 }

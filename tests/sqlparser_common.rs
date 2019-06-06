@@ -1,22 +1,3 @@
-// Copyright 2018 Grove Enterprises LLC
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-// http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-//
-// Additional modifications to this file may have been made by Timely
-// Data, Inc. See the version control log for precise modification
-// information. The derived work is copyright 2019 Timely Data and
-// is not licensed under the terms of the above license.
-
 #![warn(clippy::all)]
 //! Test SQL syntax, which all sqlparser dialects must parse in the same way.
 //!
@@ -65,7 +46,7 @@ fn parse_insert_values() {
         sql: &str,
         expected_table_name: &str,
         expected_columns: &[String],
-        expected_rows: &Vec<Vec<ASTNode>>,
+        expected_rows: &[Vec<ASTNode>],
     ) {
         match verified_stmt(sql) {
             SQLStatement::SQLInsert {
@@ -77,7 +58,9 @@ fn parse_insert_values() {
                 assert_eq!(table_name.to_string(), expected_table_name);
                 assert_eq!(columns, expected_columns);
                 match &source.body {
-                    SQLSetExpr::Values(SQLValues(values)) => assert_eq!(values, expected_rows),
+                    SQLSetExpr::Values(SQLValues(values)) => {
+                        assert_eq!(values.as_slice(), expected_rows)
+                    }
                     _ => unreachable!(),
                 }
             }
@@ -209,6 +192,16 @@ fn parse_simple_select() {
 }
 
 #[test]
+fn parse_select_with_limit_but_no_where() {
+    let sql = "SELECT id, fname, lname FROM customer LIMIT 5";
+    let select = verified_only_select(sql);
+    assert_eq!(false, select.distinct);
+    assert_eq!(3, select.projection.len());
+    let select = verified_query(sql);
+    assert_eq!(Some(ASTNode::SQLValue(Value::Long(5))), select.limit);
+}
+
+#[test]
 fn parse_select_distinct() {
     let sql = "SELECT DISTINCT name FROM customer";
     let select = verified_only_select(sql);
@@ -221,13 +214,7 @@ fn parse_select_distinct() {
 
 #[test]
 fn parse_select_all() {
-    let sql = "SELECT ALL name FROM customer";
-    let select = verified_only_select(sql);
-    assert_eq!(false, select.distinct);
-    assert_eq!(
-        &SQLSelectItem::UnnamedExpression(ASTNode::SQLIdentifier("name".to_string())),
-        only(&select.projection)
-    );
+    one_statement_parses_to("SELECT ALL name FROM customer", "SELECT name FROM customer");
 }
 
 #[test]
@@ -293,6 +280,21 @@ fn parse_column_aliases() {
 }
 
 #[test]
+fn test_eof_after_as() {
+    let res = parse_sql_statements("SELECT foo AS");
+    assert_eq!(
+        ParserError::ParserError("Expected an identifier after AS, found: EOF".to_string()),
+        res.unwrap_err()
+    );
+
+    let res = parse_sql_statements("SELECT 1 FROM foo AS");
+    assert_eq!(
+        ParserError::ParserError("Expected an identifier after AS, found: EOF".to_string()),
+        res.unwrap_err()
+    );
+}
+
+#[test]
 fn parse_select_count_wildcard() {
     let sql = "SELECT COUNT(*) FROM customer";
     let select = verified_only_select(sql);
@@ -323,6 +325,20 @@ fn parse_select_count_distinct() {
         }),
         expr_from_projection(only(&select.projection))
     );
+
+    one_statement_parses_to(
+        "SELECT COUNT(ALL + x) FROM customer",
+        "SELECT COUNT(+ x) FROM customer",
+    );
+
+    let sql = "SELECT COUNT(ALL DISTINCT + x) FROM customer";
+    let res = parse_sql_statements(sql);
+    assert_eq!(
+        ParserError::ParserError(
+            "Cannot specify both ALL and DISTINCT in function: COUNT".to_string()
+        ),
+        res.unwrap_err()
+    );
 }
 
 #[test]
@@ -336,7 +352,7 @@ fn parse_not() {
 fn parse_invalid_infix_not() {
     let res = parse_sql_statements("SELECT c FROM t WHERE c NOT (");
     assert_eq!(
-        ParserError::ParserError("Expected IN or BETWEEN after NOT, found: (".to_string()),
+        ParserError::ParserError("Expected end of statement, found: NOT".to_string()),
         res.unwrap_err(),
     );
 }
@@ -639,25 +655,47 @@ fn parse_between_with_expr() {
     use self::SQLOperator::*;
     let sql = "SELECT * FROM t WHERE 1 BETWEEN 1 + 2 AND 3 + 4 IS NULL";
     let select = verified_only_select(sql);
-    let low = SQLBinaryExpr {
-        left: Box::new(ASTNode::SQLValue(Value::Long(1))),
-        op: Plus,
-        right: Box::new(ASTNode::SQLValue(Value::Long(2))),
-    };
-    let high = SQLBinaryExpr {
-        left: Box::new(ASTNode::SQLValue(Value::Long(3))),
-        op: Plus,
-        right: Box::new(ASTNode::SQLValue(Value::Long(4))),
-    };
     assert_eq!(
         ASTNode::SQLIsNull(Box::new(ASTNode::SQLBetween {
             expr: Box::new(ASTNode::SQLValue(Value::Long(1))),
-            low: Box::new(low),
-            high: Box::new(high),
+            low: Box::new(SQLBinaryExpr {
+                left: Box::new(ASTNode::SQLValue(Value::Long(1))),
+                op: Plus,
+                right: Box::new(ASTNode::SQLValue(Value::Long(2))),
+            }),
+            high: Box::new(SQLBinaryExpr {
+                left: Box::new(ASTNode::SQLValue(Value::Long(3))),
+                op: Plus,
+                right: Box::new(ASTNode::SQLValue(Value::Long(4))),
+            }),
             negated: false,
         })),
         select.selection.unwrap()
     );
+
+    let sql = "SELECT * FROM t WHERE 1 = 1 AND 1 + x BETWEEN 1 AND 2";
+    let select = verified_only_select(sql);
+    assert_eq!(
+        ASTNode::SQLBinaryExpr {
+            left: Box::new(ASTNode::SQLBinaryExpr {
+                left: Box::new(ASTNode::SQLValue(Value::Long(1))),
+                op: SQLOperator::Eq,
+                right: Box::new(ASTNode::SQLValue(Value::Long(1))),
+            }),
+            op: SQLOperator::And,
+            right: Box::new(ASTNode::SQLBetween {
+                expr: Box::new(ASTNode::SQLBinaryExpr {
+                    left: Box::new(ASTNode::SQLValue(Value::Long(1))),
+                    op: SQLOperator::Plus,
+                    right: Box::new(ASTNode::SQLIdentifier("x".to_string())),
+                }),
+                low: Box::new(ASTNode::SQLValue(Value::Long(1))),
+                high: Box::new(ASTNode::SQLValue(Value::Long(2))),
+                negated: false,
+            }),
+        },
+        select.selection.unwrap(),
+    )
 }
 
 #[test]
@@ -792,21 +830,16 @@ fn parse_create_table() {
                name VARCHAR(100) NOT NULL,\
                lat DOUBLE NULL,\
                lng DOUBLE,
-               PRIMARY KEY (lat, lng),
-               constrained INT NULL CONSTRAINT pkey PRIMARY KEY NOT NULL UNIQUE,
-               CONSTRAINT constrained_again UNIQUE (constrained),
-               CHECK (lat + lng = 42)
-           )";
+               constrained INT NULL CONSTRAINT pkey PRIMARY KEY NOT NULL UNIQUE CHECK (constrained > 0),
+               ref INT REFERENCES othertable (a, b))";
     let ast = one_statement_parses_to(
         sql,
         "CREATE TABLE uk_cities (\
          name character varying(100) NOT NULL, \
          lat double NULL, \
          lng double, \
-         constrained int NULL CONSTRAINT pkey PRIMARY KEY NOT NULL UNIQUE, \
-         PRIMARY KEY (lat, lng), \
-         CONSTRAINT constrained_again UNIQUE (constrained), \
-         CHECK (lat + lng = 42))",
+         constrained int NULL CONSTRAINT pkey PRIMARY KEY NOT NULL UNIQUE CHECK (constrained > 0), \
+         ref int REFERENCES othertable (a, b))",
     );
     match ast {
         SQLStatement::SQLCreateTable {
@@ -825,47 +858,55 @@ fn parse_create_table() {
                     SQLColumnDef {
                         name: "name".into(),
                         data_type: SQLType::Varchar(Some(100)),
-                        constraints: vec![SQLColumnConstraint::NotNull],
+                        collation: None,
+                        constraints: vec![ColumnConstraint::NotNull],
                     },
                     SQLColumnDef {
                         name: "lat".into(),
                         data_type: SQLType::Double,
-                        constraints: vec![SQLColumnConstraint::Null],
+                        collation: None,
+                        constraints: vec![ColumnConstraint::Null],
                     },
                     SQLColumnDef {
                         name: "lng".into(),
                         data_type: SQLType::Double,
+                        collation: None,
                         constraints: vec![],
                     },
                     SQLColumnDef {
                         name: "constrained".into(),
                         data_type: SQLType::Int,
+                        collation: None,
                         constraints: vec![
-                            SQLColumnConstraint::Null,
-                            SQLColumnConstraint::PrimaryKey(Some("pkey".into())),
-                            SQLColumnConstraint::NotNull,
-                            SQLColumnConstraint::Unique(None),
+                            ColumnConstraint::Null,
+                            ColumnConstraint::Unique {
+                                name: Some("pkey".into()),
+                                is_primary: true
+                            },
+                            ColumnConstraint::NotNull,
+                            ColumnConstraint::Unique {
+                                name: None,
+                                is_primary: false
+                            },
+                            ColumnConstraint::Check {
+                                name: None,
+                                expr: Box::new(verified_expr("constrained > 0")),
+                            }
                         ],
+                    },
+                    SQLColumnDef {
+                        name: "ref".into(),
+                        data_type: SQLType::Int,
+                        collation: None,
+                        constraints: vec![ColumnConstraint::ForeignKey {
+                            name: None,
+                            foreign_table: SQLObjectName(vec!["othertable".into()]),
+                            referred_columns: vec!["a".into(), "b".into(),],
+                        },]
                     }
                 ]
             );
-            assert_eq!(
-                constraints,
-                vec![
-                    SQLTableConstraint::PrimaryKey {
-                        name: None,
-                        columns: vec!["lat".into(), "lng".into()],
-                    },
-                    SQLTableConstraint::Unique {
-                        name: Some("constrained_again".into()),
-                        columns: vec!["constrained".into()],
-                    },
-                    SQLTableConstraint::Check {
-                        name: None,
-                        expr: verified_expr("lat + lng = 42"),
-                    },
-                ]
-            );
+            assert!(constraints.is_empty());
             assert_eq!(with_options, vec![]);
         }
         _ => unreachable!(),
@@ -893,6 +934,12 @@ fn parse_create_table_with_options() {
         }
         _ => unreachable!(),
     }
+}
+
+#[test]
+fn parse_create_table_trailing_comma() {
+    let sql = "CREATE TABLE foo (bar int,)";
+    all_dialects().one_statement_parses_to(sql, "CREATE TABLE foo (bar int)");
 }
 
 #[test]
@@ -927,21 +974,24 @@ fn parse_create_external_table() {
                     SQLColumnDef {
                         name: "name".into(),
                         data_type: SQLType::Varchar(Some(100)),
-                        constraints: vec![SQLColumnConstraint::NotNull],
+                        collation: None,
+                        constraints: vec![ColumnConstraint::NotNull],
                     },
                     SQLColumnDef {
                         name: "lat".into(),
                         data_type: SQLType::Double,
-                        constraints: vec![SQLColumnConstraint::Null],
+                        collation: None,
+                        constraints: vec![ColumnConstraint::Null],
                     },
                     SQLColumnDef {
                         name: "lng".into(),
                         data_type: SQLType::Double,
+                        collation: None,
                         constraints: vec![],
                     },
                 ]
             );
-            assert_eq!(constraints, vec![]);
+            assert!(constraints.is_empty());
 
             assert!(external);
             assert_eq!(FileFormat::TEXTFILE, file_format.unwrap());
@@ -960,27 +1010,52 @@ fn parse_create_table_empty() {
 }
 
 #[test]
-fn parse_alter_table_constraint_primary_key() {
-    let sql = "ALTER TABLE bazaar.address \
-               ADD CONSTRAINT address_pkey PRIMARY KEY (address_id)";
-    match verified_stmt(sql) {
-        SQLStatement::SQLAlterTable { name, .. } => {
-            assert_eq!(name.to_string(), "bazaar.address");
+fn parse_alter_table_constraints() {
+    check_one("CONSTRAINT address_pkey PRIMARY KEY (address_id)");
+    check_one("CONSTRAINT uk_task UNIQUE (report_date, task_id)");
+    check_one(
+        "CONSTRAINT customer_address_id_fkey FOREIGN KEY (address_id) \
+         REFERENCES public.address(address_id)",
+    );
+    check_one("CONSTRAINT ck CHECK (rtrim(ltrim(REF_CODE)) <> '')");
+
+    check_one("PRIMARY KEY (foo, bar)");
+    check_one("UNIQUE (id)");
+    check_one("FOREIGN KEY (foo, bar) REFERENCES AnotherTable(foo, bar)");
+    check_one("CHECK (end_date > start_date OR end_date IS NULL)");
+
+    fn check_one(constraint_text: &str) {
+        match verified_stmt(&format!("ALTER TABLE tab ADD {}", constraint_text)) {
+            SQLStatement::SQLAlterTable {
+                name,
+                operation: AlterTableOperation::AddConstraint(constraint),
+            } => {
+                assert_eq!("tab", name.to_string());
+                assert_eq!(constraint_text, constraint.to_string());
+            }
+            _ => unreachable!(),
         }
-        _ => unreachable!(),
+        verified_stmt(&format!("CREATE TABLE foo (id int, {})", constraint_text));
     }
 }
 
 #[test]
-fn parse_alter_table_constraint_foreign_key() {
-    let sql = "ALTER TABLE public.customer \
-        ADD CONSTRAINT customer_address_id_fkey FOREIGN KEY (address_id) REFERENCES public.address(address_id)";
-    match verified_stmt(sql) {
-        SQLStatement::SQLAlterTable { name, .. } => {
-            assert_eq!(name.to_string(), "public.customer");
-        }
-        _ => unreachable!(),
-    }
+fn parse_bad_constraint() {
+    let res = parse_sql_statements("ALTER TABLE tab ADD");
+    assert_eq!(
+        ParserError::ParserError(
+            "Expected a constraint in ALTER TABLE .. ADD, found: EOF".to_string()
+        ),
+        res.unwrap_err()
+    );
+
+    let res = parse_sql_statements("CREATE TABLE tab (foo int,");
+    assert_eq!(
+        ParserError::ParserError(
+            "Expected column name or constraint definition, found: EOF".to_string()
+        ),
+        res.unwrap_err()
+    );
 }
 
 #[test]
@@ -1054,14 +1129,6 @@ fn parse_literal_string() {
     );
 
     one_statement_parses_to("SELECT x'deadBEEF'", "SELECT X'deadBEEF'");
-
-    let res = parse_sql_statements("SELECT X'abcdefgfedcba'");
-    assert_eq!(
-        ParserError::ParserError(
-            "Hexadecimal string literal contains non-hex character: g".to_string()
-        ),
-        res.unwrap_err()
-    );
 }
 
 #[test]
@@ -1503,6 +1570,43 @@ fn parse_joins_using() {
 }
 
 #[test]
+fn parse_natural_join() {
+    fn natural_join(f: impl Fn(JoinConstraint) -> JoinOperator) -> Join {
+        Join {
+            relation: TableFactor::Table {
+                name: SQLObjectName(vec!["t2".to_string()]),
+                alias: None,
+                args: vec![],
+                with_hints: vec![],
+            },
+            join_operator: f(JoinConstraint::Natural),
+        }
+    }
+    assert_eq!(
+        verified_only_select("SELECT * FROM t1 NATURAL JOIN t2").joins,
+        vec![natural_join(JoinOperator::Inner)]
+    );
+    assert_eq!(
+        verified_only_select("SELECT * FROM t1 NATURAL LEFT JOIN t2").joins,
+        vec![natural_join(JoinOperator::LeftOuter)]
+    );
+    assert_eq!(
+        verified_only_select("SELECT * FROM t1 NATURAL RIGHT JOIN t2").joins,
+        vec![natural_join(JoinOperator::RightOuter)]
+    );
+    assert_eq!(
+        verified_only_select("SELECT * FROM t1 NATURAL FULL JOIN t2").joins,
+        vec![natural_join(JoinOperator::FullOuter)]
+    );
+
+    let sql = "SELECT * FROM t1 natural";
+    assert_eq!(
+        ParserError::ParserError("Expected a join type after NATURAL, found: EOF".to_string()),
+        parse_sql_statements(sql).unwrap_err(),
+    );
+}
+
+#[test]
 fn parse_complex_join() {
     let sql = "SELECT c1, c2 FROM t1, t4 JOIN t2 ON t2.c = t1.c LEFT JOIN t3 USING(q, c) WHERE t4.c = t1.c";
     verified_only_select(sql);
@@ -1731,7 +1835,17 @@ fn parse_exists_subquery() {
     let sql = "SELECT * FROM t WHERE EXISTS (SELECT 1)";
     let select = verified_only_select(sql);
     assert_eq!(
-        ASTNode::SQLExists(Box::new(expected_inner)),
+        ASTNode::SQLExists(Box::new(expected_inner.clone())),
+        select.selection.unwrap(),
+    );
+
+    let sql = "SELECT * FROM t WHERE NOT EXISTS (SELECT 1)";
+    let select = verified_only_select(sql);
+    assert_eq!(
+        ASTNode::SQLUnary {
+            operator: SQLOperator::Not,
+            expr: Box::new(ASTNode::SQLExists(Box::new(expected_inner))),
+        },
         select.selection.unwrap(),
     );
 
@@ -1777,27 +1891,6 @@ fn parse_create_view() {
 }
 
 #[test]
-fn parse_create_view_with_columns() {
-    let sql = "CREATE VIEW v (has, cols) AS SELECT 1, 2";
-    match verified_stmt(sql) {
-        SQLStatement::SQLCreateView {
-            name,
-            columns,
-            query,
-            materialized,
-            with_options,
-        } => {
-            assert_eq!("v", name.to_string());
-            assert_eq!(columns, vec!["has".to_string(), "cols".to_string()]);
-            assert_eq!("SELECT 1, 2", query.to_string());
-            assert!(!materialized);
-            assert_eq!(with_options, vec![]);
-        }
-        _ => unreachable!(),
-    }
-}
-
-#[test]
 fn parse_create_view_with_options() {
     let sql = "CREATE VIEW v WITH (foo = 'bar', a = 123) AS SELECT 1";
     match verified_stmt(sql) {
@@ -1815,6 +1908,27 @@ fn parse_create_view_with_options() {
                 ],
                 with_options
             );
+        }
+        _ => unreachable!(),
+    }
+}
+
+#[test]
+fn parse_create_view_with_columns() {
+    let sql = "CREATE VIEW v (has, cols) AS SELECT 1, 2";
+    match verified_stmt(sql) {
+        SQLStatement::SQLCreateView {
+            name,
+            columns,
+            with_options,
+            query,
+            materialized,
+        } => {
+            assert_eq!("v", name.to_string());
+            assert_eq!(columns, vec!["has".to_string(), "cols".to_string()]);
+            assert_eq!(with_options, vec![]);
+            assert_eq!("SELECT 1, 2", query.to_string());
+            assert!(!materialized);
         }
         _ => unreachable!(),
     }
@@ -1917,74 +2031,91 @@ fn parse_create_data_sink() {
 fn parse_drop_table() {
     let sql = "DROP TABLE foo";
     match verified_stmt(sql) {
-        SQLStatement::SQLDropTable(SQLDrop {
+        SQLStatement::SQLDrop {
+            object_type,
             if_exists,
             names,
             cascade,
-            restrict,
-        }) => {
+        } => {
             assert_eq!(false, if_exists);
+            assert_eq!(SQLObjectType::Table, object_type);
             assert_eq!(
                 vec!["foo"],
                 names.iter().map(|n| n.to_string()).collect::<Vec<_>>()
             );
             assert_eq!(false, cascade);
-            assert_eq!(false, restrict);
         }
-        _ => assert!(false),
+        _ => unreachable!(),
     }
 
     let sql = "DROP TABLE IF EXISTS foo, bar CASCADE";
     match verified_stmt(sql) {
-        SQLStatement::SQLDropTable(SQLDrop {
+        SQLStatement::SQLDrop {
+            object_type,
             if_exists,
             names,
             cascade,
-            restrict,
-        }) => {
+        } => {
             assert_eq!(true, if_exists);
+            assert_eq!(SQLObjectType::Table, object_type);
             assert_eq!(
                 vec!["foo", "bar"],
                 names.iter().map(|n| n.to_string()).collect::<Vec<_>>()
             );
             assert_eq!(true, cascade);
-            assert_eq!(false, restrict);
         }
-        _ => assert!(false),
+        _ => unreachable!(),
     }
 
     let sql = "DROP TABLE";
-    assert!(parse_sql_statements(sql).is_err());
+    assert_eq!(
+        ParserError::ParserError("Expected identifier, found: EOF".to_string()),
+        parse_sql_statements(sql).unwrap_err(),
+    );
 
     let sql = "DROP TABLE IF EXISTS foo, bar CASCADE RESTRICT";
-    assert!(parse_sql_statements(sql).is_err());
-}
-
-#[test]
-fn parse_drop_data_source() {
-    let sql = "DROP DATA SOURCE myschema.mydatasource";
-    match verified_stmt(sql) {
-        SQLStatement::SQLDropDataSource(SQLDrop { names, .. }) => {
-            assert_eq!(
-                vec!["myschema.mydatasource"],
-                names.iter().map(|n| n.to_string()).collect::<Vec<_>>()
-            );
-        }
-        _ => assert!(false),
-    }
+    assert_eq!(
+        ParserError::ParserError("Cannot specify both CASCADE and RESTRICT in DROP".to_string()),
+        parse_sql_statements(sql).unwrap_err(),
+    );
 }
 
 #[test]
 fn parse_drop_view() {
     let sql = "DROP VIEW myschema.myview";
     match verified_stmt(sql) {
-        SQLStatement::SQLDropView(SQLDrop { names, .. }) => {
+        SQLStatement::SQLDrop {
+            names, object_type, ..
+        } => {
             assert_eq!(
                 vec!["myschema.myview"],
                 names.iter().map(|n| n.to_string()).collect::<Vec<_>>()
             );
+            assert_eq!(SQLObjectType::View, object_type);
         }
-        _ => assert!(false),
+        _ => unreachable!(),
+    }
+}
+
+#[test]
+fn parse_drop_data_source() {
+    let sql = "DROP DATA SOURCE myschema.mydatasource";
+    match verified_stmt(sql) {
+        SQLStatement::SQLDrop {
+            object_type,
+            if_exists,
+            names,
+            cascade,
+        } => {
+            assert_eq!(false, if_exists);
+            assert_eq!(SQLObjectType::DataSource, object_type);
+            assert_eq!(
+                vec!["myschema.mydatasource"],
+                names.iter().map(|n| n.to_string()).collect::<Vec<_>>()
+            );
+            assert_eq!(false, cascade);
+        }
+        _ => unreachable!(),
     }
 }
 
@@ -2015,6 +2146,238 @@ fn parse_invalid_subquery_without_parens() {
     let res = parse_sql_statements("SELECT SELECT 1 FROM bar WHERE 1=1 FROM baz");
     assert_eq!(
         ParserError::ParserError("Expected end of statement, found: 1".to_string()),
+        res.unwrap_err()
+    );
+}
+
+#[test]
+fn parse_offset() {
+    let ast = verified_query("SELECT foo FROM bar OFFSET 2 ROWS");
+    assert_eq!(ast.offset, Some(ASTNode::SQLValue(Value::Long(2))));
+    let ast = verified_query("SELECT foo FROM bar WHERE foo = 4 OFFSET 2 ROWS");
+    assert_eq!(ast.offset, Some(ASTNode::SQLValue(Value::Long(2))));
+    let ast = verified_query("SELECT foo FROM bar ORDER BY baz OFFSET 2 ROWS");
+    assert_eq!(ast.offset, Some(ASTNode::SQLValue(Value::Long(2))));
+    let ast = verified_query("SELECT foo FROM bar WHERE foo = 4 ORDER BY baz OFFSET 2 ROWS");
+    assert_eq!(ast.offset, Some(ASTNode::SQLValue(Value::Long(2))));
+    let ast = verified_query("SELECT foo FROM (SELECT * FROM bar OFFSET 2 ROWS) OFFSET 2 ROWS");
+    assert_eq!(ast.offset, Some(ASTNode::SQLValue(Value::Long(2))));
+    match ast.body {
+        SQLSetExpr::Select(s) => match s.relation {
+            Some(TableFactor::Derived { subquery, .. }) => {
+                assert_eq!(subquery.offset, Some(ASTNode::SQLValue(Value::Long(2))));
+            }
+            _ => panic!("Test broke"),
+        },
+        _ => panic!("Test broke"),
+    }
+}
+
+#[test]
+fn parse_singular_row_offset() {
+    one_statement_parses_to(
+        "SELECT foo FROM bar OFFSET 1 ROW",
+        "SELECT foo FROM bar OFFSET 1 ROWS",
+    );
+}
+
+#[test]
+fn parse_fetch() {
+    let ast = verified_query("SELECT foo FROM bar FETCH FIRST 2 ROWS ONLY");
+    assert_eq!(
+        ast.fetch,
+        Some(Fetch {
+            with_ties: false,
+            percent: false,
+            quantity: Some(ASTNode::SQLValue(Value::Long(2))),
+        })
+    );
+    let ast = verified_query("SELECT foo FROM bar FETCH FIRST ROWS ONLY");
+    assert_eq!(
+        ast.fetch,
+        Some(Fetch {
+            with_ties: false,
+            percent: false,
+            quantity: None,
+        })
+    );
+    let ast = verified_query("SELECT foo FROM bar WHERE foo = 4 FETCH FIRST 2 ROWS ONLY");
+    assert_eq!(
+        ast.fetch,
+        Some(Fetch {
+            with_ties: false,
+            percent: false,
+            quantity: Some(ASTNode::SQLValue(Value::Long(2))),
+        })
+    );
+    let ast = verified_query("SELECT foo FROM bar ORDER BY baz FETCH FIRST 2 ROWS ONLY");
+    assert_eq!(
+        ast.fetch,
+        Some(Fetch {
+            with_ties: false,
+            percent: false,
+            quantity: Some(ASTNode::SQLValue(Value::Long(2))),
+        })
+    );
+    let ast = verified_query(
+        "SELECT foo FROM bar WHERE foo = 4 ORDER BY baz FETCH FIRST 2 ROWS WITH TIES",
+    );
+    assert_eq!(
+        ast.fetch,
+        Some(Fetch {
+            with_ties: true,
+            percent: false,
+            quantity: Some(ASTNode::SQLValue(Value::Long(2))),
+        })
+    );
+    let ast = verified_query("SELECT foo FROM bar FETCH FIRST 50 PERCENT ROWS ONLY");
+    assert_eq!(
+        ast.fetch,
+        Some(Fetch {
+            with_ties: false,
+            percent: true,
+            quantity: Some(ASTNode::SQLValue(Value::Long(50))),
+        })
+    );
+    let ast = verified_query(
+        "SELECT foo FROM bar WHERE foo = 4 ORDER BY baz OFFSET 2 ROWS FETCH FIRST 2 ROWS ONLY",
+    );
+    assert_eq!(ast.offset, Some(ASTNode::SQLValue(Value::Long(2))));
+    assert_eq!(
+        ast.fetch,
+        Some(Fetch {
+            with_ties: false,
+            percent: false,
+            quantity: Some(ASTNode::SQLValue(Value::Long(2))),
+        })
+    );
+    let ast = verified_query(
+        "SELECT foo FROM (SELECT * FROM bar FETCH FIRST 2 ROWS ONLY) FETCH FIRST 2 ROWS ONLY",
+    );
+    assert_eq!(
+        ast.fetch,
+        Some(Fetch {
+            with_ties: false,
+            percent: false,
+            quantity: Some(ASTNode::SQLValue(Value::Long(2))),
+        })
+    );
+    match ast.body {
+        SQLSetExpr::Select(s) => match s.relation {
+            Some(TableFactor::Derived { subquery, .. }) => {
+                assert_eq!(
+                    subquery.fetch,
+                    Some(Fetch {
+                        with_ties: false,
+                        percent: false,
+                        quantity: Some(ASTNode::SQLValue(Value::Long(2))),
+                    })
+                );
+            }
+            _ => panic!("Test broke"),
+        },
+        _ => panic!("Test broke"),
+    }
+    let ast = verified_query("SELECT foo FROM (SELECT * FROM bar OFFSET 2 ROWS FETCH FIRST 2 ROWS ONLY) OFFSET 2 ROWS FETCH FIRST 2 ROWS ONLY");
+    assert_eq!(ast.offset, Some(ASTNode::SQLValue(Value::Long(2))));
+    assert_eq!(
+        ast.fetch,
+        Some(Fetch {
+            with_ties: false,
+            percent: false,
+            quantity: Some(ASTNode::SQLValue(Value::Long(2))),
+        })
+    );
+    match ast.body {
+        SQLSetExpr::Select(s) => match s.relation {
+            Some(TableFactor::Derived { subquery, .. }) => {
+                assert_eq!(subquery.offset, Some(ASTNode::SQLValue(Value::Long(2))));
+                assert_eq!(
+                    subquery.fetch,
+                    Some(Fetch {
+                        with_ties: false,
+                        percent: false,
+                        quantity: Some(ASTNode::SQLValue(Value::Long(2))),
+                    })
+                );
+            }
+            _ => panic!("Test broke"),
+        },
+        _ => panic!("Test broke"),
+    }
+}
+
+#[test]
+fn parse_fetch_variations() {
+    one_statement_parses_to(
+        "SELECT foo FROM bar FETCH FIRST 10 ROW ONLY",
+        "SELECT foo FROM bar FETCH FIRST 10 ROWS ONLY",
+    );
+    one_statement_parses_to(
+        "SELECT foo FROM bar FETCH NEXT 10 ROW ONLY",
+        "SELECT foo FROM bar FETCH FIRST 10 ROWS ONLY",
+    );
+    one_statement_parses_to(
+        "SELECT foo FROM bar FETCH NEXT 10 ROWS WITH TIES",
+        "SELECT foo FROM bar FETCH FIRST 10 ROWS WITH TIES",
+    );
+    one_statement_parses_to(
+        "SELECT foo FROM bar FETCH NEXT ROWS WITH TIES",
+        "SELECT foo FROM bar FETCH FIRST ROWS WITH TIES",
+    );
+    one_statement_parses_to(
+        "SELECT foo FROM bar FETCH FIRST ROWS ONLY",
+        "SELECT foo FROM bar FETCH FIRST ROWS ONLY",
+    );
+}
+
+#[test]
+fn lateral_derived() {
+    fn chk(lateral_in: bool) {
+        let lateral_str = if lateral_in { "LATERAL " } else { "" };
+        let sql = format!(
+            "SELECT * FROM customer LEFT JOIN {}\
+             (SELECT * FROM order WHERE order.customer = customer.id LIMIT 3) AS order ON true",
+            lateral_str
+        );
+        let select = verified_only_select(&sql);
+        assert_eq!(select.joins.len(), 1);
+        assert_eq!(
+            select.joins[0].join_operator,
+            JoinOperator::LeftOuter(JoinConstraint::On(ASTNode::SQLValue(Value::Boolean(true))))
+        );
+        if let TableFactor::Derived {
+            lateral,
+            ref subquery,
+            alias: Some(ref alias),
+        } = select.joins[0].relation
+        {
+            assert_eq!(lateral_in, lateral);
+            assert_eq!("order".to_string(), alias.name);
+            assert_eq!(
+                subquery.to_string(),
+                "SELECT * FROM order WHERE order.customer = customer.id LIMIT 3"
+            );
+        } else {
+            unreachable!()
+        }
+    }
+    chk(false);
+    chk(true);
+
+    let sql = "SELECT * FROM customer LEFT JOIN LATERAL generate_series(1, customer.id)";
+    let res = parse_sql_statements(sql);
+    assert_eq!(
+        ParserError::ParserError(
+            "Expected subquery after LATERAL, found: generate_series".to_string()
+        ),
+        res.unwrap_err()
+    );
+
+    let sql = "SELECT * FROM a LEFT JOIN LATERAL (b CROSS JOIN c)";
+    let res = parse_sql_statements(sql);
+    assert_eq!(
+        ParserError::ParserError("Expected subquery after LATERAL, found nested join".to_string()),
         res.unwrap_err()
     );
 }
