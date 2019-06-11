@@ -1,3 +1,15 @@
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 use ordered_float::OrderedFloat;
 
 /// Primitive SQL values such as number and string
@@ -21,11 +33,13 @@ pub enum Value {
     Time(String),
     /// Timestamp literals, which include both a date and time
     Timestamp(String),
-    /// Time intervals
+    /// INTERVAL literals, e.g. INTERVAL '12:34.56' MINUTE TO SECOND (2)
     Interval {
         value: String,
-        start_qualifier: SQLIntervalQualifier,
-        end_qualifier: SQLIntervalQualifier,
+        leading_field: SQLDateTimeField,
+        leading_precision: Option<u64>,
+        last_field: Option<SQLDateTimeField>,
+        fractional_seconds_precision: Option<u64>,
     },
     /// NULL value in insert statements,
     Null,
@@ -45,67 +59,46 @@ impl ToString for Value {
             Value::Timestamp(v) => format!("TIMESTAMP '{}'", escape_single_quote_string(v)),
             Value::Interval {
                 value,
-                start_qualifier,
-                end_qualifier,
-            } => format_interval(value, start_qualifier, end_qualifier),
+                leading_field: SQLDateTimeField::Second,
+                leading_precision: Some(leading_precision),
+                last_field,
+                fractional_seconds_precision: Some(fractional_seconds_precision),
+            } => {
+                // When the leading field is SECOND, the parser guarantees that
+                // the last field is None.
+                assert!(last_field.is_none());
+                format!(
+                    "INTERVAL '{}' SECOND ({}, {})",
+                    escape_single_quote_string(value),
+                    leading_precision,
+                    fractional_seconds_precision
+                )
+            }
+            Value::Interval {
+                value,
+                leading_field,
+                leading_precision,
+                last_field,
+                fractional_seconds_precision,
+            } => {
+                let mut s = format!(
+                    "INTERVAL '{}' {}",
+                    escape_single_quote_string(value),
+                    leading_field.to_string()
+                );
+                if let Some(leading_precision) = leading_precision {
+                    s += &format!(" ({})", leading_precision);
+                }
+                if let Some(last_field) = last_field {
+                    s += &format!(" TO {}", last_field.to_string());
+                }
+                if let Some(fractional_seconds_precision) = fractional_seconds_precision {
+                    s += &format!(" ({})", fractional_seconds_precision);
+                }
+                s
+            }
             Value::Null => "NULL".to_string(),
         }
-    }
-}
-
-fn format_interval(
-    value: &str,
-    start_qualifier: &SQLIntervalQualifier,
-    end_qualifier: &SQLIntervalQualifier,
-) -> String {
-    let mut s = format!("INTERVAL '{}' ", escape_single_quote_string(value),);
-    match (start_qualifier, end_qualifier) {
-        (
-            SQLIntervalQualifier {
-                field: SQLDateTimeField::Second,
-                precision: Some(p1),
-            },
-            SQLIntervalQualifier {
-                field: SQLDateTimeField::Second,
-                precision: Some(p2),
-            },
-        ) => {
-            // Both the start and end fields are in seconds, and both have
-            // precisions. The SQL standard special cases how this is formatted.
-            s += &format!("SECOND ({}, {})", p1, p2);
-        }
-
-        (start, end) if start == end => {
-            // The start and end qualifiers are the same. In this case we can
-            // output only the start field.
-            s += &start_qualifier.to_string()
-        }
-
-        _ => {
-            // General case: output both, with precisions.
-            s += &format!(
-                "{} TO {}",
-                start_qualifier.to_string(),
-                end_qualifier.to_string()
-            );
-        }
-    }
-    s
-}
-
-#[derive(Debug, Clone, PartialEq, Hash)]
-pub struct SQLIntervalQualifier {
-    pub field: SQLDateTimeField,
-    pub precision: Option<u64>,
-}
-
-impl ToString for SQLIntervalQualifier {
-    fn to_string(&self) -> String {
-        let mut s = self.field.to_string();
-        if let Some(precision) = self.precision {
-            s += &format!(" ({})", precision);
-        }
-        s
     }
 }
 

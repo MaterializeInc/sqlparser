@@ -1,3 +1,15 @@
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 use super::*;
 
 /// The most complete variant of a `SELECT` query expression, optionally
@@ -113,9 +125,7 @@ pub struct SQLSelect {
     /// projection expressions
     pub projection: Vec<SQLSelectItem>,
     /// FROM
-    pub relation: Option<TableFactor>,
-    /// JOIN
-    pub joins: Vec<Join>,
+    pub from: Vec<TableWithJoins>,
     /// WHERE
     pub selection: Option<ASTNode>,
     /// GROUP BY
@@ -131,11 +141,8 @@ impl ToString for SQLSelect {
             if self.distinct { " DISTINCT" } else { "" },
             comma_separated_string(&self.projection)
         );
-        if let Some(ref relation) = self.relation {
-            s += &format!(" FROM {}", relation.to_string());
-        }
-        for join in &self.joins {
-            s += &join.to_string();
+        if !self.from.is_empty() {
+            s += &format!(" FROM {}", comma_separated_string(&self.from));
         }
         if let Some(ref selection) = self.selection {
             s += &format!(" WHERE {}", selection.to_string());
@@ -197,6 +204,22 @@ impl ToString for SQLSelectItem {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Hash)]
+pub struct TableWithJoins {
+    pub relation: TableFactor,
+    pub joins: Vec<Join>,
+}
+
+impl ToString for TableWithJoins {
+    fn to_string(&self) -> String {
+        let mut s = self.relation.to_string();
+        for join in &self.joins {
+            s += &join.to_string();
+        }
+        s
+    }
+}
+
 /// A table name or a parenthesized subquery with an optional alias
 #[derive(Debug, Clone, PartialEq, Hash)]
 pub enum TableFactor {
@@ -215,10 +238,7 @@ pub enum TableFactor {
         subquery: Box<SQLQuery>,
         alias: Option<TableAlias>,
     },
-    NestedJoin {
-        base: Box<TableFactor>,
-        joins: Vec<Join>,
-    },
+    NestedJoin(Box<TableWithJoins>),
 }
 
 impl ToString for TableFactor {
@@ -257,12 +277,8 @@ impl ToString for TableFactor {
                 }
                 s
             }
-            TableFactor::NestedJoin { base, joins } => {
-                let mut s = base.to_string();
-                for join in joins {
-                    s += &join.to_string();
-                }
-                format!("({})", s)
+            TableFactor::NestedJoin(table_reference) => {
+                format!("({})", table_reference.to_string())
             }
         }
     }
@@ -313,7 +329,6 @@ impl ToString for Join {
                 suffix(constraint)
             ),
             JoinOperator::Cross => format!(" CROSS JOIN {}", self.relation.to_string()),
-            JoinOperator::Implicit => format!(", {}", self.relation.to_string()),
             JoinOperator::LeftOuter(constraint) => format!(
                 " {}LEFT JOIN {}{}",
                 prefix(constraint),
@@ -342,7 +357,6 @@ pub enum JoinOperator {
     LeftOuter(JoinConstraint),
     RightOuter(JoinConstraint),
     FullOuter(JoinConstraint),
-    Implicit,
     Cross,
 }
 

@@ -1,5 +1,3 @@
-// Copyright 2018 Grove Enterprises LLC
-//
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -23,15 +21,16 @@ pub mod visit;
 
 use std::ops::Deref;
 
-pub use self::ddl::{AlterTableOperation, ColumnConstraint, SQLColumnDef, TableConstraint};
+pub use self::ddl::{
+    AlterTableOperation, ColumnOption, ColumnOptionDef, SQLColumnDef, TableConstraint,
+};
 pub use self::query::{
     Cte, Fetch, Join, JoinConstraint, JoinOperator, SQLOrderByExpr, SQLQuery, SQLSelect,
-    SQLSelectItem, SQLSetExpr, SQLSetOperator, SQLValues, TableAlias, TableFactor,
+    SQLSelectItem, SQLSetExpr, SQLSetOperator, SQLValues, TableAlias, TableFactor, TableWithJoins,
 };
+pub use self::sql_operator::{SQLBinaryOperator, SQLUnaryOperator};
 pub use self::sqltype::SQLType;
-pub use self::value::{SQLDateTimeField, SQLIntervalQualifier, Value};
-
-pub use self::sql_operator::SQLOperator;
+pub use self::value::{SQLDateTimeField, Value};
 
 /// Like `vec.join(", ")`, but for any types implementing ToString.
 fn comma_separated_string<I>(iter: I) -> String
@@ -90,11 +89,16 @@ pub enum ASTNode {
         low: Box<ASTNode>,
         high: Box<ASTNode>,
     },
-    /// Binary expression e.g. `1 + 1` or `foo > bar`
-    SQLBinaryExpr {
+    /// Binary operation e.g. `1 + 1` or `foo > bar`
+    SQLBinaryOp {
         left: Box<ASTNode>,
-        op: SQLOperator,
+        op: SQLBinaryOperator,
         right: Box<ASTNode>,
+    },
+    /// Unary operation e.g. `NOT foo`
+    SQLUnaryOp {
+        op: SQLUnaryOperator,
+        expr: Box<ASTNode>,
     },
     /// CAST an expression to a different data type e.g. `CAST(foo AS VARCHAR(123))`
     SQLCast {
@@ -112,11 +116,6 @@ pub enum ASTNode {
     },
     /// Nested expression e.g. `(foo > bar)` or `(1)`
     SQLNested(Box<ASTNode>),
-    /// Unary expression
-    SQLUnary {
-        operator: SQLOperator,
-        expr: Box<ASTNode>,
-    },
     /// SQLValue
     SQLValue(Value),
     /// Scalar function call e.g. `LEFT(foo, 5)`
@@ -180,12 +179,15 @@ impl ToString for ASTNode {
                 low.to_string(),
                 high.to_string()
             ),
-            ASTNode::SQLBinaryExpr { left, op, right } => format!(
+            ASTNode::SQLBinaryOp { left, op, right } => format!(
                 "{} {} {}",
                 left.as_ref().to_string(),
                 op.to_string(),
                 right.as_ref().to_string()
             ),
+            ASTNode::SQLUnaryOp { op, expr } => {
+                format!("{} {}", op.to_string(), expr.as_ref().to_string())
+            }
             ASTNode::SQLCast { expr, data_type } => format!(
                 "CAST({} AS {})",
                 expr.as_ref().to_string(),
@@ -200,9 +202,6 @@ impl ToString for ASTNode {
                 collation.to_string()
             ),
             ASTNode::SQLNested(ast) => format!("({})", ast.as_ref().to_string()),
-            ASTNode::SQLUnary { operator, expr } => {
-                format!("{} {}", operator.to_string(), expr.as_ref().to_string())
-            }
             ASTNode::SQLValue(v) => v.to_string(),
             ASTNode::SQLFunction(f) => f.to_string(),
             ASTNode::SQLCase {
@@ -429,10 +428,19 @@ pub enum SQLStatement {
         names: Vec<SQLObjectName>,
         cascade: bool,
     },
+    /// { BEGIN [ TRANSACTION | WORK ] | START TRANSACTION } ...
+    SQLStartTransaction { modes: Vec<TransactionMode> },
+    /// SET TRANSACTION ...
+    SQLSetTransaction { modes: Vec<TransactionMode> },
+    /// COMMIT [ TRANSACTION | WORK ] [ AND [ NO ] CHAIN ]
+    SQLCommit { chain: bool },
+    /// ROLLBACK [ TRANSACTION | WORK ] [ AND [ NO ] CHAIN ]
+    SQLRollback { chain: bool },
     /// PEEK
     SQLPeek {
         name: SQLObjectName,
     },
+    /// TAIL
     SQLTail {
         name: SQLObjectName,
     },
@@ -621,6 +629,28 @@ impl ToString for SQLStatement {
                 comma_separated_string(names),
                 if *cascade { " CASCADE" } else { "" },
             ),
+            SQLStatement::SQLStartTransaction { modes } => format!(
+                "START TRANSACTION{}",
+                if modes.is_empty() {
+                    "".into()
+                } else {
+                    format!(" {}", comma_separated_string(modes))
+                }
+            ),
+            SQLStatement::SQLSetTransaction { modes } => format!(
+                "SET TRANSACTION{}",
+                if modes.is_empty() {
+                    "".into()
+                } else {
+                    format!(" {}", comma_separated_string(modes))
+                }
+            ),
+            SQLStatement::SQLCommit { chain } => {
+                format!("COMMIT{}", if *chain { " AND CHAIN" } else { "" },)
+            }
+            SQLStatement::SQLRollback { chain } => {
+                format!("ROLLBACK{}", if *chain { " AND CHAIN" } else { "" },)
+            }
             SQLStatement::SQLPeek { name } => format!("PEEK {}", name.to_string()),
             SQLStatement::SQLTail { name } => format!("TAIL {}", name.to_string()),
         }
@@ -763,5 +793,57 @@ pub struct SQLOption {
 impl ToString for SQLOption {
     fn to_string(&self) -> String {
         format!("{} = {}", self.name.to_string(), self.value.to_string())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Hash)]
+pub enum TransactionMode {
+    AccessMode(TransactionAccessMode),
+    IsolationLevel(TransactionIsolationLevel),
+}
+
+impl ToString for TransactionMode {
+    fn to_string(&self) -> String {
+        use TransactionMode::*;
+        match self {
+            AccessMode(access_mode) => access_mode.to_string(),
+            IsolationLevel(iso_level) => format!("ISOLATION LEVEL {}", iso_level.to_string()),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Hash)]
+pub enum TransactionAccessMode {
+    ReadOnly,
+    ReadWrite,
+}
+
+impl ToString for TransactionAccessMode {
+    fn to_string(&self) -> String {
+        use TransactionAccessMode::*;
+        match self {
+            ReadOnly => "READ ONLY".into(),
+            ReadWrite => "READ WRITE".into(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Hash)]
+pub enum TransactionIsolationLevel {
+    ReadUncommitted,
+    ReadCommitted,
+    RepeatableRead,
+    Serializable,
+}
+
+impl ToString for TransactionIsolationLevel {
+    fn to_string(&self) -> String {
+        use TransactionIsolationLevel::*;
+        match self {
+            ReadUncommitted => "READ UNCOMMITTED".into(),
+            ReadCommitted => "READ COMMITTED".into(),
+            RepeatableRead => "REPEATABLE READ".into(),
+            Serializable => "SERIALIZABLE".into(),
+        }
     }
 }

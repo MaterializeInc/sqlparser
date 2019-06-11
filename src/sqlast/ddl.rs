@@ -86,7 +86,7 @@ pub struct SQLColumnDef {
     pub name: SQLIdent,
     pub data_type: SQLType,
     pub collation: Option<SQLObjectName>,
-    pub constraints: Vec<ColumnConstraint>,
+    pub options: Vec<ColumnOptionDef>,
 }
 
 impl ToString for SQLColumnDef {
@@ -95,7 +95,7 @@ impl ToString for SQLColumnDef {
             "{} {}{}",
             self.name,
             self.data_type.to_string(),
-            self.constraints
+            self.options
                 .iter()
                 .map(|c| format!(" {}", c.to_string()))
                 .collect::<Vec<_>>()
@@ -104,75 +104,85 @@ impl ToString for SQLColumnDef {
     }
 }
 
+/// An optionally-named `ColumnOption`: `[ CONSTRAINT <name> ] <column-option>`.
+///
+/// Note that implementations are substantially more permissive than the ANSI
+/// specification on what order column options can be presented in, and whether
+/// they are allowed to be named. The specification distinguishes between
+/// constraints (NOT NULL, UNIQUE, PRIMARY KEY, and CHECK), which can be named
+/// and can appear in any order, and other options (DEFAULT, GENERATED), which
+/// cannot be named and must appear in a fixed order. PostgreSQL, however,
+/// allows preceding any option with `CONSTRAINT <name>`, even those that are
+/// not really constraints, like NULL and DEFAULT. MSSQL is less permissive,
+/// allowing DEFAULT, UNIQUE, PRIMARY KEY and CHECK to be named, but not NULL or
+/// NOT NULL constraints (the last of which is in violation of the spec).
+///
+/// For maximum flexibility, we don't distinguish between constraint and
+/// non-constraint options, lumping them all together under the umbrella of
+/// "column options," and we allow any column option to be named.
 #[derive(Debug, Clone, PartialEq, Hash)]
-pub enum ColumnConstraint {
+pub struct ColumnOptionDef {
+    pub name: Option<SQLIdent>,
+    pub option: ColumnOption,
+}
+
+impl ToString for ColumnOptionDef {
+    fn to_string(&self) -> String {
+        format!(
+            "{}{}",
+            format_constraint_name(&self.name),
+            self.option.to_string()
+        )
+    }
+}
+
+/// `ColumnOption`s are modifiers that follow a column definition in a `CREATE
+/// TABLE` statement.
+#[derive(Debug, Clone, PartialEq, Hash)]
+pub enum ColumnOption {
     /// `NULL`
-    ///
-    /// The ANSI specification technically allows NULL constraints to have a
-    /// name, but no known databases retain that name, if they even parse it
-    /// at all. Just omit it until we have evidence that it's important.
     Null,
     /// `NOT NULL`
-    ///
-    /// As with `NULL`, `NOT NULL` constraints can technically have a name,
-    /// but we choose to omit it.
     NotNull,
-    /// `[ CONSTRAINT <name> ] DEFAULT <restricted-expr>`
-    Default {
-        name: Option<SQLIdent>,
-        expr: ASTNode,
-    },
-    /// `[ CONSTRAINT <name> ] { PRIMARY KEY | UNIQUE }`
+    /// `DEFAULT <restricted-expr>`
+    Default(ASTNode),
+    /// `{ PRIMARY KEY | UNIQUE }`
     Unique {
-        name: Option<SQLIdent>,
-        /// Whether this is a `PRIMARY KEY` or just a `UNIQUE` constraint
         is_primary: bool,
     },
-    /// A referential integrity constraint (`[ CONSTRAINT <name> ] FOREIGN KEY
-    /// REFERENCES <foreign_table> (<referred_columns>)`)
+    /// A referential integrity constraint (`[FOREIGN KEY REFERENCES
+    /// <foreign_table> (<referred_columns>)`).
     ForeignKey {
-        name: Option<SQLIdent>,
         foreign_table: SQLObjectName,
         referred_columns: Vec<SQLIdent>,
     },
-    // `[ CONSTRAINT <name> ] CHECK (<expr>)`
-    Check {
-        name: Option<SQLIdent>,
-        expr: Box<ASTNode>,
-    },
+    // `CHECK (<expr>)`
+    Check(ASTNode),
 }
 
-impl ToString for ColumnConstraint {
+impl ToString for ColumnOption {
     fn to_string(&self) -> String {
-        use ColumnConstraint::*;
+        use ColumnOption::*;
         match self {
             Null => "NULL".to_string(),
             NotNull => "NOT NULL".to_string(),
-            Default { name, expr } => format!(
-                "{}DEFAULT {}",
-                format_constraint_name(name),
-                expr.to_string()
-            ),
-            Unique { name, is_primary } => format!(
-                "{}{}",
-                format_constraint_name(name),
-                if *is_primary { "PRIMARY KEY" } else { "UNIQUE" },
-            ),
+            Default(expr) => format!("DEFAULT {}", expr.to_string()),
+            Unique { is_primary } => {
+                if *is_primary {
+                    "PRIMARY KEY".to_string()
+                } else {
+                    "UNIQUE".to_string()
+                }
+            }
             ForeignKey {
-                name,
                 foreign_table,
                 referred_columns,
             } => format!(
-                "{}REFERENCES {} ({})",
-                format_constraint_name(name),
+                "REFERENCES {} ({})",
                 foreign_table.to_string(),
                 referred_columns.join(", ")
             ),
-            Check { name, expr } => format!(
-                "{}CHECK ({})",
-                format_constraint_name(name),
-                expr.to_string()
-            ),
+            Check(expr) => format!("CHECK ({})", expr.to_string(),),
         }
     }
 }

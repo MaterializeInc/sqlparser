@@ -1,3 +1,15 @@
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 #![warn(clippy::all)]
 //! Test SQL syntax specific to PostgreSQL. The parser based on the
 //! generic dialect is also tested (on the inputs it can handle).
@@ -38,82 +50,112 @@ fn parse_create_table_with_defaults() {
                         name: "customer_id".into(),
                         data_type: SQLType::Int,
                         collation: None,
-                        constraints: vec![ColumnConstraint::Default {
+                        options: vec![ColumnOptionDef {
                             name: None,
-                            expr: pg().verified_expr("nextval(public.customer_customer_id_seq)")
+                            option: ColumnOption::Default(
+                                pg().verified_expr("nextval(public.customer_customer_id_seq)")
+                            )
                         }],
                     },
                     SQLColumnDef {
                         name: "store_id".into(),
                         data_type: SQLType::SmallInt,
                         collation: None,
-                        constraints: vec![ColumnConstraint::NotNull],
+                        options: vec![ColumnOptionDef {
+                            name: None,
+                            option: ColumnOption::NotNull,
+                        }],
                     },
                     SQLColumnDef {
                         name: "first_name".into(),
                         data_type: SQLType::Varchar(Some(45)),
                         collation: None,
-                        constraints: vec![ColumnConstraint::NotNull],
+                        options: vec![ColumnOptionDef {
+                            name: None,
+                            option: ColumnOption::NotNull,
+                        }],
                     },
                     SQLColumnDef {
                         name: "last_name".into(),
                         data_type: SQLType::Varchar(Some(45)),
                         collation: Some(SQLObjectName(vec!["\"es_ES\"".into()])),
-                        constraints: vec![ColumnConstraint::NotNull],
+                        options: vec![ColumnOptionDef {
+                            name: None,
+                            option: ColumnOption::NotNull,
+                        }],
                     },
                     SQLColumnDef {
                         name: "email".into(),
                         data_type: SQLType::Varchar(Some(50)),
                         collation: None,
-                        constraints: vec![],
+                        options: vec![],
                     },
                     SQLColumnDef {
                         name: "address_id".into(),
                         data_type: SQLType::SmallInt,
                         collation: None,
-                        constraints: vec![ColumnConstraint::NotNull],
+                        options: vec![ColumnOptionDef {
+                            name: None,
+                            option: ColumnOption::NotNull
+                        }],
                     },
                     SQLColumnDef {
                         name: "activebool".into(),
                         data_type: SQLType::Boolean,
                         collation: None,
-                        constraints: vec![
-                            ColumnConstraint::Default {
+                        options: vec![
+                            ColumnOptionDef {
                                 name: None,
-                                expr: ASTNode::SQLValue(Value::Boolean(true)),
+                                option: ColumnOption::Default(ASTNode::SQLValue(Value::Boolean(
+                                    true
+                                ))),
                             },
-                            ColumnConstraint::NotNull
+                            ColumnOptionDef {
+                                name: None,
+                                option: ColumnOption::NotNull,
+                            }
                         ],
                     },
                     SQLColumnDef {
                         name: "create_date".into(),
                         data_type: SQLType::Date,
                         collation: None,
-                        constraints: vec![
-                            ColumnConstraint::Default {
+                        options: vec![
+                            ColumnOptionDef {
                                 name: None,
-                                expr: pg().verified_expr("CAST(now() AS text)")
+                                option: ColumnOption::Default(
+                                    pg().verified_expr("CAST(now() AS text)")
+                                )
                             },
-                            ColumnConstraint::NotNull
+                            ColumnOptionDef {
+                                name: None,
+                                option: ColumnOption::NotNull,
+                            }
                         ],
                     },
                     SQLColumnDef {
                         name: "last_update".into(),
                         data_type: SQLType::Timestamp,
                         collation: None,
-                        constraints: vec![
-                            ColumnConstraint::Default {
+                        options: vec![
+                            ColumnOptionDef {
                                 name: None,
-                                expr: pg().verified_expr("now()")
+                                option: ColumnOption::Default(pg().verified_expr("now()")),
                             },
-                            ColumnConstraint::NotNull
+                            ColumnOptionDef {
+                                name: None,
+                                option: ColumnOption::NotNull,
+                            }
                         ],
                     },
                     SQLColumnDef {
                         name: "active".into(),
                         data_type: SQLType::Int,
                         collation: None,
-                        constraints: vec![ColumnConstraint::NotNull],
+                        options: vec![ColumnOptionDef {
+                            name: None,
+                            option: ColumnOption::NotNull
+                        }],
                     },
                 ]
             );

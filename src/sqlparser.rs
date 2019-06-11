@@ -1,5 +1,3 @@
-// Copyright 2018 Grove Enterprises LLC
-//
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -109,7 +107,7 @@ impl Parser {
         match self.next_token() {
             Some(t) => match t {
                 Token::SQLWord(ref w) if w.keyword != "" => match w.keyword.as_ref() {
-                    "SELECT" | "WITH" => {
+                    "SELECT" | "WITH" | "VALUES" => {
                         self.prev_token();
                         Ok(SQLStatement::SQLQuery(Box::new(self.parse_query()?)))
                     }
@@ -120,6 +118,14 @@ impl Parser {
                     "UPDATE" => Ok(self.parse_update()?),
                     "ALTER" => Ok(self.parse_alter()?),
                     "COPY" => Ok(self.parse_copy()?),
+                    "START" => Ok(self.parse_start_transaction()?),
+                    "SET" => Ok(self.parse_set_transaction()?),
+                    // `BEGIN` is a nonstandard but common alias for the
+                    // standard `START TRANSACTION` statement. It is supported
+                    // by at least PostgreSQL and MySQL.
+                    "BEGIN" => Ok(self.parse_begin()?),
+                    "COMMIT" => Ok(self.parse_commit()?),
+                    "ROLLBACK" => Ok(self.parse_rollback()?),
                     "PEEK" => Ok(SQLStatement::SQLPeek {
                         name: self.parse_object_name()?,
                     }),
@@ -131,6 +137,10 @@ impl Parser {
                         w.to_string()
                     )),
                 },
+                Token::LParen => {
+                    self.prev_token();
+                    Ok(SQLStatement::SQLQuery(Box::new(self.parse_query()?)))
+                }
                 unexpected => self.expected(
                     "a keyword at the beginning of a statement",
                     Some(unexpected),
@@ -179,9 +189,9 @@ impl Parser {
                 "EXISTS" => self.parse_exists_expression(),
                 "EXTRACT" => self.parse_extract_expression(),
                 "INTERVAL" => self.parse_literal_interval(),
-                "NOT" => Ok(ASTNode::SQLUnary {
-                    operator: SQLOperator::Not,
-                    expr: Box::new(self.parse_subexpr(15)?),
+                "NOT" => Ok(ASTNode::SQLUnaryOp {
+                    op: SQLUnaryOperator::Not,
+                    expr: Box::new(self.parse_subexpr(Self::UNARY_NOT_PREC)?),
                 }),
                 "TIME" => Ok(ASTNode::SQLValue(Value::Time(self.parse_literal_string()?))),
                 "TIMESTAMP" => Ok(ASTNode::SQLValue(Value::Timestamp(
@@ -220,13 +230,13 @@ impl Parser {
             }, // End of Token::SQLWord
             Token::Mult => Ok(ASTNode::SQLWildcard),
             tok @ Token::Minus | tok @ Token::Plus => {
-                let operator = if tok == Token::Plus {
-                    SQLOperator::Plus
+                let op = if tok == Token::Plus {
+                    SQLUnaryOperator::Plus
                 } else {
-                    SQLOperator::Minus
+                    SQLUnaryOperator::Minus
                 };
-                Ok(ASTNode::SQLUnary {
-                    operator,
+                Ok(ASTNode::SQLUnaryOp {
+                    op,
                     expr: Box::new(self.parse_subexpr(Self::PLUS_MINUS_PREC)?),
                 })
             }
@@ -419,6 +429,10 @@ impl Parser {
         })
     }
 
+    // This function parses date/time fields for both the EXTRACT function-like
+    // operator and interval qualifiers. EXTRACT supports a wider set of
+    // date/time fields than interval qualifiers, so this function may need to
+    // be split in two.
     pub fn parse_date_time_field(&mut self) -> Result<SQLDateTimeField, ParserError> {
         let tok = self.next_token();
         if let Some(Token::SQLWord(ref k)) = tok {
@@ -438,78 +452,64 @@ impl Parser {
 
     /// Parse an INTERVAL literal.
     ///
-    /// Some valid intervals:
-    ///     1. `INTERVAL '1' DAY`
-    ///     2. `INTERVAL '1-1' YEAR TO MONTH`
-    ///     3. `INTERVAL '1' SECONDS`
-    ///     4. `INTERVAL '1:1:1.1' HOUR (5) TO SECONDS (5)`
-    ///     5. `INTERVAL '1.1` SECONDS (2, 2)`
-    ///     6. `INTERVAL '1:1' HOUR (5) TO MINUTE (5)`
-    ///     7. `INTERVAL '1:1' SECOND TO SECOND`
+    /// Some syntactically valid intervals:
     ///
-    /// Note that (6) is not technically standards compliant, as the only
-    /// end qualifier which can specify a precision is `SECOND`. (7) is also
-    /// not standards compliant, as `SECOND` is not permitted to appear as a
-    /// start qualifier, except in the special form of (5). In the interest of
-    /// sanity, for the time being, we accept all the forms listed above.
+    ///   1. `INTERVAL '1' DAY`
+    ///   2. `INTERVAL '1-1' YEAR TO MONTH`
+    ///   3. `INTERVAL '1' SECOND`
+    ///   4. `INTERVAL '1:1:1.1' HOUR (5) TO SECOND (5)`
+    ///   5. `INTERVAL '1.1' SECOND (2, 2)`
+    ///   6. `INTERVAL '1:1' HOUR (5) TO MINUTE (5)`
+    ///
+    /// Note that we do not currently attempt to parse the quoted value.
     pub fn parse_literal_interval(&mut self) -> Result<ASTNode, ParserError> {
+        // The SQL standard allows an optional sign before the value string, but
+        // it is not clear if any implementations support that syntax, so we
+        // don't currently try to parse it. (The sign can instead be included
+        // inside the value string.)
+
         // The first token in an interval is a string literal which specifies
         // the duration of the interval.
         let value = self.parse_literal_string()?;
 
         // Following the string literal is a qualifier which indicates the units
         // of the duration specified in the string literal.
-        let start_field = self.parse_date_time_field()?;
+        //
+        // Note that PostgreSQL allows omitting the qualifier, but we currently
+        // require at least the leading field, in accordance with the ANSI spec.
+        let leading_field = self.parse_date_time_field()?;
 
-        // The start qualifier is optionally followed by a numeric precision.
-        // If the the start qualifier has the same units as the end qualifier,
-        // we'll actually get *two* precisions here, for both the start and the
-        // end.
-        let (start_precision, end_precision) = if self.consume_token(&Token::LParen) {
-            let start_precision = Some(self.parse_literal_uint()?);
-            let end_precision = if self.consume_token(&Token::Comma) {
-                Some(self.parse_literal_uint()?)
+        let (leading_precision, last_field, fsec_precision) =
+            if leading_field == SQLDateTimeField::Second {
+                // SQL mandates special syntax for `SECOND TO SECOND` literals.
+                // Instead of
+                //     `SECOND [(<leading precision>)] TO SECOND[(<fractional seconds precision>)]`
+                // one must use the special format:
+                //     `SECOND [( <leading precision> [ , <fractional seconds precision>] )]`
+                let last_field = None;
+                let (leading_precision, fsec_precision) = self.parse_optional_precision_scale()?;
+                (leading_precision, last_field, fsec_precision)
             } else {
-                None
+                let leading_precision = self.parse_optional_precision()?;
+                if self.parse_keyword("TO") {
+                    let last_field = Some(self.parse_date_time_field()?);
+                    let fsec_precision = if last_field == Some(SQLDateTimeField::Second) {
+                        self.parse_optional_precision()?
+                    } else {
+                        None
+                    };
+                    (leading_precision, last_field, fsec_precision)
+                } else {
+                    (leading_precision, None, None)
+                }
             };
-            self.expect_token(&Token::RParen)?;
-            (start_precision, end_precision)
-        } else {
-            (None, None)
-        };
-
-        // The start qualifier is optionally followed by an end qualifier.
-        let (end_field, end_precision) = if self.parse_keyword("TO") {
-            if end_precision.is_some() {
-                // This is an interval like `INTERVAL '1' HOUR (2, 2) TO MINUTE (3)`.
-                // We've already seen the end precision, so allowing an explicit
-                // end qualifier would raise the question of which to keep.
-                // Note that while technically `INTERVAL '1:1' HOUR (2, 2) TO MINUTE`
-                // is unambiguous, it is extremely confusing and non-standard,
-                // so just reject it.
-                return parser_err!("Cannot use dual-precision syntax with TO in INTERVAL literal");
-            }
-            (
-                self.parse_date_time_field()?,
-                self.parse_optional_precision()?,
-            )
-        } else {
-            // If no end qualifier is specified, use the values from the start
-            // qualifier. Note that we might have an explicit end precision even
-            // if we don't have an explicit start field.
-            (start_field.clone(), end_precision.or(start_precision))
-        };
 
         Ok(ASTNode::SQLValue(Value::Interval {
             value,
-            start_qualifier: SQLIntervalQualifier {
-                field: start_field,
-                precision: start_precision,
-            },
-            end_qualifier: SQLIntervalQualifier {
-                field: end_field,
-                precision: end_precision,
-            },
+            leading_field,
+            leading_precision,
+            last_field,
+            fractional_seconds_precision: fsec_precision,
         }))
     }
 
@@ -519,24 +519,24 @@ impl Parser {
         let tok = self.next_token().unwrap(); // safe as EOF's precedence is the lowest
 
         let regular_binary_operator = match tok {
-            Token::Eq => Some(SQLOperator::Eq),
-            Token::Neq => Some(SQLOperator::NotEq),
-            Token::Gt => Some(SQLOperator::Gt),
-            Token::GtEq => Some(SQLOperator::GtEq),
-            Token::Lt => Some(SQLOperator::Lt),
-            Token::LtEq => Some(SQLOperator::LtEq),
-            Token::Plus => Some(SQLOperator::Plus),
-            Token::Minus => Some(SQLOperator::Minus),
-            Token::Mult => Some(SQLOperator::Multiply),
-            Token::Mod => Some(SQLOperator::Modulus),
-            Token::Div => Some(SQLOperator::Divide),
+            Token::Eq => Some(SQLBinaryOperator::Eq),
+            Token::Neq => Some(SQLBinaryOperator::NotEq),
+            Token::Gt => Some(SQLBinaryOperator::Gt),
+            Token::GtEq => Some(SQLBinaryOperator::GtEq),
+            Token::Lt => Some(SQLBinaryOperator::Lt),
+            Token::LtEq => Some(SQLBinaryOperator::LtEq),
+            Token::Plus => Some(SQLBinaryOperator::Plus),
+            Token::Minus => Some(SQLBinaryOperator::Minus),
+            Token::Mult => Some(SQLBinaryOperator::Multiply),
+            Token::Mod => Some(SQLBinaryOperator::Modulus),
+            Token::Div => Some(SQLBinaryOperator::Divide),
             Token::SQLWord(ref k) => match k.keyword.as_ref() {
-                "AND" => Some(SQLOperator::And),
-                "OR" => Some(SQLOperator::Or),
-                "LIKE" => Some(SQLOperator::Like),
+                "AND" => Some(SQLBinaryOperator::And),
+                "OR" => Some(SQLBinaryOperator::Or),
+                "LIKE" => Some(SQLBinaryOperator::Like),
                 "NOT" => {
                     if self.parse_keyword("LIKE") {
-                        Some(SQLOperator::NotLike)
+                        Some(SQLBinaryOperator::NotLike)
                     } else {
                         None
                     }
@@ -547,7 +547,7 @@ impl Parser {
         };
 
         if let Some(op) = regular_binary_operator {
-            Ok(ASTNode::SQLBinaryExpr {
+            Ok(ASTNode::SQLBinaryOp {
                 left: Box::new(expr),
                 op,
                 right: Box::new(self.parse_subexpr(precedence)?),
@@ -629,6 +629,7 @@ impl Parser {
         })
     }
 
+    const UNARY_NOT_PREC: u8 = 15;
     const BETWEEN_PREC: u8 = 20;
     const PLUS_MINUS_PREC: u8 = 30;
 
@@ -957,15 +958,10 @@ impl Parser {
             ));
         };
         let if_exists = self.parse_keywords(vec!["IF", "EXISTS"]);
-        let mut names = vec![self.parse_object_name()?];
+        let mut names = vec![];
         loop {
-            let token = &self.next_token();
-            if let Some(Token::Comma) = token {
-                names.push(self.parse_object_name()?)
-            } else {
-                if token.is_some() {
-                    self.prev_token();
-                }
+            names.push(self.parse_object_name()?);
+            if !self.consume_token(&Token::Comma) {
                 break;
             }
         }
@@ -1022,11 +1018,11 @@ impl Parser {
                 } else {
                     None
                 };
-                let mut constraints = vec![];
+                let mut options = vec![];
                 loop {
                     match self.peek_token() {
                         None | Some(Token::Comma) | Some(Token::RParen) => break,
-                        _ => constraints.push(self.parse_column_constraint()?),
+                        _ => options.push(self.parse_column_option_def()?),
                     }
                 }
 
@@ -1034,7 +1030,7 @@ impl Parser {
                     name: column_name.as_sql_ident(),
                     data_type,
                     collation,
-                    constraints,
+                    options,
                 });
             } else {
                 return self.expected("column name or constraint definition", self.peek_token());
@@ -1051,51 +1047,43 @@ impl Parser {
         Ok((columns, constraints))
     }
 
-    pub fn parse_column_constraint(&mut self) -> Result<ColumnConstraint, ParserError> {
+    pub fn parse_column_option_def(&mut self) -> Result<ColumnOptionDef, ParserError> {
         let name = if self.parse_keyword("CONSTRAINT") {
             Some(self.parse_identifier()?)
         } else {
             None
         };
 
-        if self.parse_keywords(vec!["NOT", "NULL"]) {
-            Ok(ColumnConstraint::NotNull)
+        let option = if self.parse_keywords(vec!["NOT", "NULL"]) {
+            ColumnOption::NotNull
         } else if self.parse_keyword("NULL") {
-            Ok(ColumnConstraint::Null)
+            ColumnOption::Null
         } else if self.parse_keyword("DEFAULT") {
-            Ok(ColumnConstraint::Default {
-                name,
-                expr: self.parse_expr()?,
-            })
+            ColumnOption::Default(self.parse_expr()?)
         } else if self.parse_keywords(vec!["PRIMARY", "KEY"]) {
-            Ok(ColumnConstraint::Unique {
-                name,
-                is_primary: true,
-            })
+            ColumnOption::Unique { is_primary: true }
         } else if self.parse_keyword("UNIQUE") {
-            Ok(ColumnConstraint::Unique {
-                name,
-                is_primary: false,
-            })
+            ColumnOption::Unique { is_primary: false }
         } else if self.parse_keyword("REFERENCES") {
             let foreign_table = self.parse_object_name()?;
             let referred_columns = self.parse_parenthesized_column_list(Mandatory)?;
-            Ok(ColumnConstraint::ForeignKey {
-                name,
+            ColumnOption::ForeignKey {
                 foreign_table,
                 referred_columns,
-            })
+            }
         } else if self.parse_keyword("CHECK") {
             self.expect_token(&Token::LParen)?;
-            let expr = Box::new(self.parse_expr()?);
+            let expr = self.parse_expr()?;
             self.expect_token(&Token::RParen)?;
-            Ok(ColumnConstraint::Check { name, expr })
+            ColumnOption::Check(expr)
         } else {
-            parser_err!(format!(
+            return parser_err!(format!(
                 "Unexpected token in column definition: {:?}",
                 self.peek_token()
-            ))
-        }
+            ));
+        };
+
+        Ok(ColumnOptionDef { name, option })
     }
 
     pub fn parse_optional_table_constraint(
@@ -1157,10 +1145,9 @@ impl Parser {
             self.expect_token(&Token::Eq)?;
             let value = self.parse_value()?;
             options.push(SQLOption { name, value });
-            match self.peek_token() {
-                Some(Token::Comma) => self.next_token(),
-                _ => break,
-            };
+            if !self.consume_token(&Token::Comma) {
+                break;
+            }
         }
         self.expect_token(&Token::RParen)?;
         Ok(options)
@@ -1345,6 +1332,9 @@ impl Parser {
                     }
                     Ok(SQLType::Time)
                 }
+                // Interval types can be followed by a complicated interval
+                // qualifier that we don't currently support. See
+                // parse_interval_literal for a taste.
                 "INTERVAL" => Ok(SQLType::Interval),
                 "REGCLASS" => Ok(SQLType::Regclass),
                 "TEXT" => {
@@ -1423,29 +1413,13 @@ impl Parser {
     /// Parse one or more identifiers with the specified separator between them
     pub fn parse_list_of_ids(&mut self, separator: &Token) -> Result<Vec<SQLIdent>, ParserError> {
         let mut idents = vec![];
-        let mut expect_identifier = true;
         loop {
-            let token = &self.next_token();
-            match token {
-                Some(Token::SQLWord(s)) if expect_identifier => {
-                    expect_identifier = false;
-                    idents.push(s.as_sql_ident());
-                }
-                Some(token) if token == separator && !expect_identifier => {
-                    expect_identifier = true;
-                    continue;
-                }
-                _ => {
-                    self.prev_token();
-                    break;
-                }
+            idents.push(self.parse_identifier()?);
+            if !self.consume_token(separator) {
+                break;
             }
         }
-        if expect_identifier {
-            self.expected("identifier", self.peek_token())
-        } else {
-            Ok(idents)
-        }
+        Ok(idents)
     }
 
     /// Parse a possibly qualified, possibly quoted identifier, e.g.
@@ -1660,13 +1634,15 @@ impl Parser {
         }
         let projection = self.parse_select_list()?;
 
-        let (relation, joins) = if self.parse_keyword("FROM") {
-            let relation = Some(self.parse_table_factor()?);
-            let joins = self.parse_joins()?;
-            (relation, joins)
-        } else {
-            (None, vec![])
-        };
+        let mut from = vec![];
+        if self.parse_keyword("FROM") {
+            loop {
+                from.push(self.parse_table_and_joins()?);
+                if !self.consume_token(&Token::Comma) {
+                    break;
+                }
+            }
+        }
 
         let selection = if self.parse_keyword("WHERE") {
             Some(self.parse_expr()?)
@@ -1689,95 +1665,18 @@ impl Parser {
         Ok(SQLSelect {
             distinct,
             projection,
+            from,
             selection,
-            relation,
-            joins,
             group_by,
             having,
         })
     }
 
-    /// A table name or a parenthesized subquery, followed by optional `[AS] alias`
-    pub fn parse_table_factor(&mut self) -> Result<TableFactor, ParserError> {
-        let lateral = self.parse_keyword("LATERAL");
-        if self.consume_token(&Token::LParen) {
-            if self.parse_keyword("SELECT")
-                || self.parse_keyword("WITH")
-                || self.parse_keyword("VALUES")
-            {
-                self.prev_token();
-                let subquery = Box::new(self.parse_query()?);
-                self.expect_token(&Token::RParen)?;
-                let alias = self.parse_optional_table_alias(keywords::RESERVED_FOR_TABLE_ALIAS)?;
-                Ok(TableFactor::Derived {
-                    lateral,
-                    subquery,
-                    alias,
-                })
-            } else if lateral {
-                parser_err!("Expected subquery after LATERAL, found nested join".to_string())
-            } else {
-                let base = Box::new(self.parse_table_factor()?);
-                let joins = self.parse_joins()?;
-                self.expect_token(&Token::RParen)?;
-                Ok(TableFactor::NestedJoin { base, joins })
-            }
-        } else if lateral {
-            self.expected("subquery after LATERAL", self.peek_token())
-        } else {
-            let name = self.parse_object_name()?;
-            // Postgres, MSSQL: table-valued functions:
-            let args = if self.consume_token(&Token::LParen) {
-                self.parse_optional_args()?
-            } else {
-                vec![]
-            };
-            let alias = self.parse_optional_table_alias(keywords::RESERVED_FOR_TABLE_ALIAS)?;
-            // MSSQL-specific table hints:
-            let mut with_hints = vec![];
-            if self.parse_keyword("WITH") {
-                if self.consume_token(&Token::LParen) {
-                    with_hints = self.parse_expr_list()?;
-                    self.expect_token(&Token::RParen)?;
-                } else {
-                    // rewind, as WITH may belong to the next statement's CTE
-                    self.prev_token();
-                }
-            };
-            Ok(TableFactor::Table {
-                name,
-                alias,
-                args,
-                with_hints,
-            })
-        }
-    }
-
-    fn parse_join_constraint(&mut self, natural: bool) -> Result<JoinConstraint, ParserError> {
-        if natural {
-            Ok(JoinConstraint::Natural)
-        } else if self.parse_keyword("ON") {
-            let constraint = self.parse_expr()?;
-            Ok(JoinConstraint::On(constraint))
-        } else if self.parse_keyword("USING") {
-            let columns = self.parse_parenthesized_column_list(Mandatory)?;
-            Ok(JoinConstraint::Using(columns))
-        } else {
-            self.expected("ON, or USING after JOIN", self.peek_token())
-        }
-    }
-
-    fn parse_joins(&mut self) -> Result<Vec<Join>, ParserError> {
+    pub fn parse_table_and_joins(&mut self) -> Result<TableWithJoins, ParserError> {
+        let relation = self.parse_table_factor()?;
         let mut joins = vec![];
         loop {
             let join = match &self.peek_token() {
-                Some(Token::Comma) => {
-                    self.next_token();
-                    Join {
-                        relation: self.parse_table_factor()?,
-                        join_operator: JoinOperator::Implicit,
-                    }
-                }
                 Some(Token::SQLWord(kw)) if kw.keyword == "CROSS" => {
                     self.next_token();
                     self.expect_keyword("JOIN")?;
@@ -1826,7 +1725,76 @@ impl Parser {
             };
             joins.push(join);
         }
-        Ok(joins)
+        Ok(TableWithJoins { relation, joins })
+    }
+
+    /// A table name or a parenthesized subquery, followed by optional `[AS] alias`
+    pub fn parse_table_factor(&mut self) -> Result<TableFactor, ParserError> {
+        let lateral = self.parse_keyword("LATERAL");
+        if self.consume_token(&Token::LParen) {
+            if self.parse_keyword("SELECT")
+                || self.parse_keyword("WITH")
+                || self.parse_keyword("VALUES")
+            {
+                self.prev_token();
+                let subquery = Box::new(self.parse_query()?);
+                self.expect_token(&Token::RParen)?;
+                let alias = self.parse_optional_table_alias(keywords::RESERVED_FOR_TABLE_ALIAS)?;
+                Ok(TableFactor::Derived {
+                    lateral,
+                    subquery,
+                    alias,
+                })
+            } else if lateral {
+                parser_err!("Expected subquery after LATERAL, found nested join".to_string())
+            } else {
+                let table_reference = self.parse_table_and_joins()?;
+                self.expect_token(&Token::RParen)?;
+                Ok(TableFactor::NestedJoin(Box::new(table_reference)))
+            }
+        } else if lateral {
+            self.expected("subquery after LATERAL", self.peek_token())
+        } else {
+            let name = self.parse_object_name()?;
+            // Postgres, MSSQL: table-valued functions:
+            let args = if self.consume_token(&Token::LParen) {
+                self.parse_optional_args()?
+            } else {
+                vec![]
+            };
+            let alias = self.parse_optional_table_alias(keywords::RESERVED_FOR_TABLE_ALIAS)?;
+            // MSSQL-specific table hints:
+            let mut with_hints = vec![];
+            if self.parse_keyword("WITH") {
+                if self.consume_token(&Token::LParen) {
+                    with_hints = self.parse_expr_list()?;
+                    self.expect_token(&Token::RParen)?;
+                } else {
+                    // rewind, as WITH may belong to the next statement's CTE
+                    self.prev_token();
+                }
+            };
+            Ok(TableFactor::Table {
+                name,
+                alias,
+                args,
+                with_hints,
+            })
+        }
+    }
+
+    fn parse_join_constraint(&mut self, natural: bool) -> Result<JoinConstraint, ParserError> {
+        if natural {
+            Ok(JoinConstraint::Natural)
+        } else if self.parse_keyword("ON") {
+            let constraint = self.parse_expr()?;
+            Ok(JoinConstraint::On(constraint))
+        } else if self.parse_keyword("USING") {
+            let columns = self.parse_parenthesized_column_list(Mandatory)?;
+            Ok(JoinConstraint::Using(columns))
+        } else {
+            self.expected("ON, or USING after JOIN", self.peek_token())
+        }
     }
 
     /// Parse an INSERT statement
@@ -1988,12 +1956,91 @@ impl Parser {
             self.expect_token(&Token::LParen)?;
             values.push(self.parse_expr_list()?);
             self.expect_token(&Token::RParen)?;
-            match self.peek_token() {
-                Some(Token::Comma) => self.next_token(),
-                _ => break,
-            };
+            if !self.consume_token(&Token::Comma) {
+                break;
+            }
         }
         Ok(SQLValues(values))
+    }
+
+    pub fn parse_start_transaction(&mut self) -> Result<SQLStatement, ParserError> {
+        self.expect_keyword("TRANSACTION")?;
+        Ok(SQLStatement::SQLStartTransaction {
+            modes: self.parse_transaction_modes()?,
+        })
+    }
+
+    pub fn parse_begin(&mut self) -> Result<SQLStatement, ParserError> {
+        let _ = self.parse_one_of_keywords(&["TRANSACTION", "WORK"]);
+        Ok(SQLStatement::SQLStartTransaction {
+            modes: self.parse_transaction_modes()?,
+        })
+    }
+
+    pub fn parse_set_transaction(&mut self) -> Result<SQLStatement, ParserError> {
+        self.expect_keyword("TRANSACTION")?;
+        Ok(SQLStatement::SQLSetTransaction {
+            modes: self.parse_transaction_modes()?,
+        })
+    }
+
+    pub fn parse_transaction_modes(&mut self) -> Result<Vec<TransactionMode>, ParserError> {
+        let mut modes = vec![];
+        let mut required = false;
+        loop {
+            let mode = if self.parse_keywords(vec!["ISOLATION", "LEVEL"]) {
+                let iso_level = if self.parse_keywords(vec!["READ", "UNCOMMITTED"]) {
+                    TransactionIsolationLevel::ReadUncommitted
+                } else if self.parse_keywords(vec!["READ", "COMMITTED"]) {
+                    TransactionIsolationLevel::ReadCommitted
+                } else if self.parse_keywords(vec!["REPEATABLE", "READ"]) {
+                    TransactionIsolationLevel::RepeatableRead
+                } else if self.parse_keyword("SERIALIZABLE") {
+                    TransactionIsolationLevel::Serializable
+                } else {
+                    self.expected("isolation level", self.peek_token())?
+                };
+                TransactionMode::IsolationLevel(iso_level)
+            } else if self.parse_keywords(vec!["READ", "ONLY"]) {
+                TransactionMode::AccessMode(TransactionAccessMode::ReadOnly)
+            } else if self.parse_keywords(vec!["READ", "WRITE"]) {
+                TransactionMode::AccessMode(TransactionAccessMode::ReadWrite)
+            } else if required || self.peek_token().is_some() {
+                self.expected("transaction mode", self.peek_token())?
+            } else {
+                break;
+            };
+            modes.push(mode);
+            // ANSI requires a comma after each transaction mode, but
+            // PostgreSQL, for historical reasons, does not. We follow
+            // PostgreSQL in making the comma optional, since that is strictly
+            // more general.
+            required = self.consume_token(&Token::Comma);
+        }
+        Ok(modes)
+    }
+
+    pub fn parse_commit(&mut self) -> Result<SQLStatement, ParserError> {
+        Ok(SQLStatement::SQLCommit {
+            chain: self.parse_commit_rollback_chain()?,
+        })
+    }
+
+    pub fn parse_rollback(&mut self) -> Result<SQLStatement, ParserError> {
+        Ok(SQLStatement::SQLRollback {
+            chain: self.parse_commit_rollback_chain()?,
+        })
+    }
+
+    pub fn parse_commit_rollback_chain(&mut self) -> Result<bool, ParserError> {
+        let _ = self.parse_one_of_keywords(&["TRANSACTION", "WORK"]);
+        if self.parse_keyword("AND") {
+            let chain = !self.parse_keyword("NO");
+            self.expect_keyword("CHAIN")?;
+            Ok(chain)
+        } else {
+            Ok(false)
+        }
     }
 }
 

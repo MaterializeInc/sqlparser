@@ -1,3 +1,15 @@
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 ///! This module defines
 /// 1) a list of constants for every keyword that
 /// can appear in SQLWord::keyword:
@@ -77,6 +89,7 @@ define_keywords!(
     CAST,
     CEIL,
     CEILING,
+    CHAIN,
     CHAR,
     CHAR_LENGTH,
     CHARACTER,
@@ -89,6 +102,7 @@ define_keywords!(
     COLLECT,
     COLUMN,
     COMMIT,
+    COMMITTED,
     CONDITION,
     CONNECT,
     CONSTRAINT,
@@ -195,6 +209,7 @@ define_keywords!(
     INTERVAL,
     INTO,
     IS,
+    ISOLATION,
     JOIN,
     KEY,
     LAG,
@@ -205,6 +220,7 @@ define_keywords!(
     LEAD,
     LEADING,
     LEFT,
+    LEVEL,
     LIKE,
     LIKE_REGEX,
     LIMIT,
@@ -279,6 +295,7 @@ define_keywords!(
     PROCEDURE,
     RANGE,
     RANK,
+    READ,
     READS,
     REAL,
     RECURSIVE,
@@ -297,6 +314,7 @@ define_keywords!(
     REGR_SXY,
     REGR_SYY,
     RELEASE,
+    REPEATABLE,
     RESTRICT,
     RESULT,
     RETURN,
@@ -316,6 +334,7 @@ define_keywords!(
     SECOND,
     SELECT,
     SENSITIVE,
+    SERIALIZABLE,
     SESSION_USER,
     SET,
     SIMILAR,
@@ -357,6 +376,7 @@ define_keywords!(
     TIMEZONE_MINUTE,
     TO,
     TRAILING,
+    TRANSACTION,
     TRANSLATE,
     TRANSLATE_REGEX,
     TRANSLATION,
@@ -368,6 +388,7 @@ define_keywords!(
     TRUE,
     UESCAPE,
     UNBOUNDED,
+    UNCOMMITTED,
     UNION,
     UNIQUE,
     UNKNOWN,
@@ -395,6 +416,8 @@ define_keywords!(
     WITH,
     WITHIN,
     WITHOUT,
+    WRITE,
+    WORK,
     YEAR,
     ZONE,
     END_EXEC = "END-EXEC"

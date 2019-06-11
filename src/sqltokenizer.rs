@@ -1,5 +1,3 @@
-// Copyright 2018 Grove Enterprises LLC
-//
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -319,29 +317,25 @@ impl<'a> Tokenizer<'a> {
                 }
                 // delimited (quoted) identifier
                 quote_start if self.dialect.is_delimited_identifier_start(quote_start) => {
-                    let mut s = String::new();
                     chars.next(); // consume the opening quote
                     let quote_end = SQLWord::matching_end_quote(quote_start);
-                    while let Some(ch) = chars.next() {
-                        match ch {
-                            c if c == quote_end => break,
-                            _ => s.push(ch),
-                        }
+                    let s = peeking_take_while(chars, |ch| ch != quote_end);
+                    if chars.next() == Some(quote_end) {
+                        Ok(Some(Token::make_word(&s, Some(quote_start))))
+                    } else {
+                        Err(TokenizerError(format!(
+                            "Expected close delimiter '{}' before EOF.",
+                            quote_end
+                        )))
                     }
-                    Ok(Some(Token::make_word(&s, Some(quote_start))))
                 }
                 // numbers
                 '0'..='9' => {
-                    let mut s = String::new();
-                    while let Some(&ch) = chars.peek() {
-                        match ch {
-                            '0'..='9' | '.' => {
-                                chars.next(); // consume
-                                s.push(ch);
-                            }
-                            _ => break,
-                        }
-                    }
+                    // TODO: https://jakewheat.github.io/sql-overview/sql-2011-foundation-grammar.html#unsigned-numeric-literal
+                    let s = peeking_take_while(chars, |ch| match ch {
+                        '0'..='9' | '.' => true,
+                        _ => false,
+                    });
                     Ok(Some(Token::Number(s)))
                 }
                 // punctuation
@@ -354,22 +348,12 @@ impl<'a> Tokenizer<'a> {
                     match chars.peek() {
                         Some('-') => {
                             chars.next(); // consume the second '-', starting a single-line comment
-                            let mut s = String::new();
-                            loop {
-                                match chars.next() {
-                                    Some(ch) if ch != '\n' => {
-                                        s.push(ch);
-                                    }
-                                    other => {
-                                        if other.is_some() {
-                                            s.push('\n');
-                                        }
-                                        break Ok(Some(Token::Whitespace(
-                                            Whitespace::SingleLineComment(s),
-                                        )));
-                                    }
-                                }
+                            let mut s = peeking_take_while(chars, |ch| ch != '\n');
+                            if let Some(ch) = chars.next() {
+                                assert_eq!(ch, '\n');
+                                s.push(ch);
                             }
+                            Ok(Some(Token::Whitespace(Whitespace::SingleLineComment(s))))
                         }
                         // a regular '-' operator
                         _ => Ok(Some(Token::Minus)),
@@ -394,14 +378,8 @@ impl<'a> Tokenizer<'a> {
                 '!' => {
                     chars.next(); // consume
                     match chars.peek() {
-                        Some(&ch) => match ch {
-                            '=' => self.consume_and_return(chars, Token::Neq),
-                            _ => Err(TokenizerError(format!(
-                                "Tokenizer Error at Line: {}, Col: {}",
-                                self.line, self.col
-                            ))),
-                        },
-                        None => Err(TokenizerError(format!(
+                        Some('=') => self.consume_and_return(chars, Token::Neq),
+                        _ => Err(TokenizerError(format!(
                             "Tokenizer Error at Line: {}, Col: {}",
                             self.line, self.col
                         ))),
@@ -410,39 +388,27 @@ impl<'a> Tokenizer<'a> {
                 '<' => {
                     chars.next(); // consume
                     match chars.peek() {
-                        Some(&ch) => match ch {
-                            '=' => self.consume_and_return(chars, Token::LtEq),
-                            '>' => self.consume_and_return(chars, Token::Neq),
-                            _ => Ok(Some(Token::Lt)),
-                        },
-                        None => Ok(Some(Token::Lt)),
+                        Some('=') => self.consume_and_return(chars, Token::LtEq),
+                        Some('>') => self.consume_and_return(chars, Token::Neq),
+                        _ => Ok(Some(Token::Lt)),
                     }
                 }
                 '>' => {
                     chars.next(); // consume
                     match chars.peek() {
-                        Some(&ch) => match ch {
-                            '=' => self.consume_and_return(chars, Token::GtEq),
-                            _ => Ok(Some(Token::Gt)),
-                        },
-                        None => Ok(Some(Token::Gt)),
+                        Some('=') => self.consume_and_return(chars, Token::GtEq),
+                        _ => Ok(Some(Token::Gt)),
                     }
                 }
-                // colon
                 ':' => {
                     chars.next();
                     match chars.peek() {
-                        Some(&ch) => match ch {
-                            // double colon
-                            ':' => self.consume_and_return(chars, Token::DoubleColon),
-                            _ => Ok(Some(Token::Colon)),
-                        },
-                        None => Ok(Some(Token::Colon)),
+                        Some(':') => self.consume_and_return(chars, Token::DoubleColon),
+                        _ => Ok(Some(Token::Colon)),
                     }
                 }
                 ';' => self.consume_and_return(chars, Token::SemiColon),
                 '\\' => self.consume_and_return(chars, Token::Backslash),
-                // brakets
                 '[' => self.consume_and_return(chars, Token::LBracket),
                 ']' => self.consume_and_return(chars, Token::RBracket),
                 '&' => self.consume_and_return(chars, Token::Ampersand),
@@ -456,16 +422,10 @@ impl<'a> Tokenizer<'a> {
 
     /// Tokenize an identifier or keyword, after the first char is already consumed.
     fn tokenize_word(&self, first_char: char, chars: &mut Peekable<Chars<'_>>) -> String {
-        let mut s = String::new();
-        s.push(first_char);
-        while let Some(&ch) = chars.peek() {
-            if self.dialect.is_identifier_part(ch) {
-                chars.next(); // consume
-                s.push(ch);
-            } else {
-                break;
-            }
-        }
+        let mut s = first_char.to_string();
+        s.push_str(&peeking_take_while(chars, |ch| {
+            self.dialect.is_identifier_part(ch)
+        }));
         s
     }
 
@@ -537,6 +497,25 @@ impl<'a> Tokenizer<'a> {
         chars.next();
         Ok(Some(t))
     }
+}
+
+/// Read from `chars` until `predicate` returns `false` or EOF is hit.
+/// Return the characters read as String, and keep the first non-matching
+/// char available as `chars.next()`.
+fn peeking_take_while(
+    chars: &mut Peekable<Chars<'_>>,
+    mut predicate: impl FnMut(char) -> bool,
+) -> String {
+    let mut s = String::new();
+    while let Some(&ch) = chars.peek() {
+        if predicate(ch) {
+            chars.next(); // consume
+            s.push(ch);
+        } else {
+            break;
+        }
+    }
+    s
 }
 
 #[cfg(test)]
@@ -766,6 +745,20 @@ mod tests {
             Token::Whitespace(Whitespace::Newline),
         ];
         compare(expected, tokens);
+    }
+
+    #[test]
+    fn tokenize_mismatched_quotes() {
+        let sql = String::from("\"foo");
+
+        let dialect = GenericSqlDialect {};
+        let mut tokenizer = Tokenizer::new(&dialect, &sql);
+        assert_eq!(
+            tokenizer.tokenize(),
+            Err(TokenizerError(
+                "Expected close delimiter '\"' before EOF.".to_string(),
+            ))
+        );
     }
 
     #[test]

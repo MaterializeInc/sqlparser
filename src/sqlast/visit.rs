@@ -50,6 +50,10 @@ pub trait Visit<'ast> {
         visit_select_item(self, select_item)
     }
 
+    fn visit_table_with_joins(&mut self, table_with_joins: &'ast TableWithJoins) {
+        visit_table_with_joins(self, table_with_joins)
+    }
+
     fn visit_table_factor(&mut self, table_factor: &'ast TableFactor) {
         visit_table_factor(self, table_factor)
     }
@@ -73,8 +77,11 @@ pub trait Visit<'ast> {
         visit_derived_table_factor(self, lateral, subquery, alias)
     }
 
-    fn visit_nested_join_table_factor(&mut self, base: &'ast TableFactor, joins: &'ast [Join]) {
-        visit_nested_join_table_factor(self, base, joins)
+    fn visit_nested_join_table_factor(
+        &mut self,
+        table_with_joins: &'ast TableWithJoins,
+    ) {
+        visit_nested_join_table_factor(self, table_with_joins)
     }
 
     fn visit_table_alias(&mut self, alias: &'ast TableAlias) {
@@ -185,16 +192,22 @@ pub trait Visit<'ast> {
         visit_between(self, expr, low, high, negated)
     }
 
-    fn visit_binary_expr(
+    fn visit_binary_op(
         &mut self,
         left: &'ast ASTNode,
-        op: &'ast SQLOperator,
+        op: &'ast SQLBinaryOperator,
         right: &'ast ASTNode,
     ) {
-        visit_binary_expr(self, left, op, right)
+        visit_binary_op(self, left, op, right)
     }
 
-    fn visit_operator(&mut self, _op: &'ast SQLOperator) {}
+    fn visit_binary_operator(&mut self, _op: &'ast SQLBinaryOperator) {}
+
+    fn visit_unary_op(&mut self, expr: &'ast ASTNode, op: &'ast SQLUnaryOperator) {
+        visit_unary_op(self, expr, op)
+    }
+
+    fn visit_unary_operator(&mut self, _op: &'ast SQLUnaryOperator) {}
 
     fn visit_cast(&mut self, expr: &'ast ASTNode, data_type: &'ast SQLType) {
         visit_cast(self, expr, data_type)
@@ -212,10 +225,6 @@ pub trait Visit<'ast> {
 
     fn visit_nested(&mut self, expr: &'ast ASTNode) {
         visit_nested(self, expr)
-    }
-
-    fn visit_unary(&mut self, expr: &'ast ASTNode, op: &'ast SQLOperator) {
-        visit_unary(self, expr, op)
     }
 
     fn visit_value(&mut self, _val: &'ast Value) {}
@@ -366,8 +375,12 @@ pub trait Visit<'ast> {
         visit_column_def(self, column_def)
     }
 
-    fn visit_column_constraint(&mut self, constraint: &'ast ColumnConstraint) {
-        visit_column_constraint(self, constraint)
+    fn visit_column_option_def(&mut self, column_option_def: &'ast ColumnOptionDef) {
+        visit_column_option_def(self, column_option_def)
+    }
+
+    fn visit_column_option(&mut self, column_option: &'ast ColumnOption) {
+        visit_column_option(self, column_option)
     }
 
     fn visit_file_format(&mut self, _file_format: &'ast FileFormat) {}
@@ -434,6 +447,31 @@ pub trait Visit<'ast> {
     fn visit_alter_drop_constraint(&mut self, name: &'ast SQLIdent) {
         visit_alter_drop_constraint(self, name)
     }
+
+    fn visit_start_transaction(&mut self, modes: &'ast [TransactionMode]) {
+        visit_start_transaction(self, modes)
+    }
+
+    fn visit_set_transaction(&mut self, modes: &'ast [TransactionMode]) {
+        visit_set_transaction(self, modes)
+    }
+
+    fn visit_transaction_mode(&mut self, mode: &'ast TransactionMode) {
+        visit_transaction_mode(self, mode)
+    }
+
+    fn visit_transaction_access_mode(&mut self, _access_mode: &'ast TransactionAccessMode) {}
+
+    fn visit_transaction_isolation_level(
+        &mut self,
+        _isolation_level: &'ast TransactionIsolationLevel,
+    ) {
+
+    }
+
+    fn visit_commit(&mut self, _chain: bool) {}
+
+    fn visit_rollback(&mut self, _chain: bool) {}
 
     fn visit_peek(&mut self, name: &'ast SQLObjectName) {
         visit_peek(self, name)
@@ -514,6 +552,10 @@ pub fn visit_statement<'ast, V: Visit<'ast> + ?Sized>(
         SQLStatement::SQLAlterTable { name, operation } => {
             visitor.visit_alter_table(name, operation)
         }
+        SQLStatement::SQLStartTransaction { modes } => visitor.visit_start_transaction(modes),
+        SQLStatement::SQLSetTransaction { modes } => visitor.visit_set_transaction(modes),
+        SQLStatement::SQLCommit { chain } => visitor.visit_commit(*chain),
+        SQLStatement::SQLRollback { chain } => visitor.visit_rollback(*chain),
         SQLStatement::SQLPeek { name } => {
             visitor.visit_peek(name);
         }
@@ -545,11 +587,8 @@ pub fn visit_select<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, select: &'as
     for select_item in &select.projection {
         visitor.visit_select_item(select_item)
     }
-    if let Some(relation) = &select.relation {
-        visitor.visit_table_factor(relation);
-    }
-    for join in &select.joins {
-        visitor.visit_join(join);
+    for table_with_joins in &select.from {
+        visitor.visit_table_with_joins(table_with_joins)
     }
     if let Some(selection) = &select.selection {
         visitor.visit_where(selection);
@@ -578,6 +617,16 @@ pub fn visit_select_item<'ast, V: Visit<'ast> + ?Sized>(
     }
 }
 
+pub fn visit_table_with_joins<'ast, V: Visit<'ast> + ?Sized>(
+    visitor: &mut V,
+    table_with_joins: &'ast TableWithJoins,
+) {
+    visitor.visit_table_factor(&table_with_joins.relation);
+    for join in &table_with_joins.joins {
+        visitor.visit_join(&join);
+    }
+}
+
 pub fn visit_table_factor<'ast, V: Visit<'ast> + ?Sized>(
     visitor: &mut V,
     table_factor: &'ast TableFactor,
@@ -594,9 +643,7 @@ pub fn visit_table_factor<'ast, V: Visit<'ast> + ?Sized>(
             subquery,
             alias,
         } => visitor.visit_derived_table_factor(*lateral, subquery, alias.as_ref()),
-        TableFactor::NestedJoin { base, joins } => {
-            visitor.visit_nested_join_table_factor(base, joins)
-        }
+        TableFactor::NestedJoin(table_with_joins) => visitor.visit_nested_join_table_factor(table_with_joins),
     }
 }
 
@@ -633,13 +680,9 @@ pub fn visit_derived_table_factor<'ast, V: Visit<'ast> + ?Sized>(
 
 pub fn visit_nested_join_table_factor<'ast, V: Visit<'ast> + ?Sized>(
     visitor: &mut V,
-    base: &'ast TableFactor,
-    joins: &'ast [Join],
+    table_with_joins: &'ast TableWithJoins,
 ) {
-    visitor.visit_table_factor(base);
-    for join in joins {
-        visitor.visit_join(join);
-    }
+    visitor.visit_table_with_joins(table_with_joins);
 }
 
 pub fn visit_table_alias<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, alias: &'ast TableAlias) {
@@ -660,7 +703,7 @@ pub fn visit_join_operator<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, op: &
         JoinOperator::LeftOuter(constraint) => visitor.visit_join_constraint(constraint),
         JoinOperator::RightOuter(constraint) => visitor.visit_join_constraint(constraint),
         JoinOperator::FullOuter(constraint) => visitor.visit_join_constraint(constraint),
-        JoinOperator::Implicit | JoinOperator::Cross => (),
+        JoinOperator::Cross => (),
     }
 }
 
@@ -754,12 +797,12 @@ pub fn visit_expr<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, expr: &'ast AS
             low,
             high,
         } => visitor.visit_between(expr, low, high, *negated),
-        ASTNode::SQLBinaryExpr { left, op, right } => visitor.visit_binary_expr(left, op, right),
+        ASTNode::SQLBinaryOp { left, op, right } => visitor.visit_binary_op(left, op, right),
+        ASTNode::SQLUnaryOp { expr, op } => visitor.visit_unary_op(expr, op),
         ASTNode::SQLCast { expr, data_type } => visitor.visit_cast(expr, data_type),
         ASTNode::SQLCollate { expr, collation } => visitor.visit_collate(expr, collation),
         ASTNode::SQLExtract { field, expr } => visitor.visit_extract(field, expr),
         ASTNode::SQLNested(expr) => visitor.visit_nested(expr),
-        ASTNode::SQLUnary { expr, operator } => visitor.visit_unary(expr, operator),
         ASTNode::SQLValue(val) => visitor.visit_value(val),
         ASTNode::SQLFunction(func) => visitor.visit_function(func),
         ASTNode::SQLCase {
@@ -863,15 +906,24 @@ pub fn visit_between<'ast, V: Visit<'ast> + ?Sized>(
     visitor.visit_expr(high);
 }
 
-pub fn visit_binary_expr<'ast, V: Visit<'ast> + ?Sized>(
+pub fn visit_binary_op<'ast, V: Visit<'ast> + ?Sized>(
     visitor: &mut V,
     left: &'ast ASTNode,
-    op: &'ast SQLOperator,
+    op: &'ast SQLBinaryOperator,
     right: &'ast ASTNode,
 ) {
     visitor.visit_expr(left);
-    visitor.visit_operator(op);
+    visitor.visit_binary_operator(op);
     visitor.visit_expr(right);
+}
+
+pub fn visit_unary_op<'ast, V: Visit<'ast> + ?Sized>(
+    visitor: &mut V,
+    expr: &'ast ASTNode,
+    op: &'ast SQLUnaryOperator,
+) {
+    visitor.visit_expr(expr);
+    visitor.visit_unary_operator(op);
 }
 
 pub fn visit_cast<'ast, V: Visit<'ast> + ?Sized>(
@@ -903,15 +955,6 @@ pub fn visit_extract<'ast, V: Visit<'ast> + ?Sized>(
 
 pub fn visit_nested<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, expr: &'ast ASTNode) {
     visitor.visit_expr(expr);
-}
-
-pub fn visit_unary<'ast, V: Visit<'ast> + ?Sized>(
-    visitor: &mut V,
-    expr: &'ast ASTNode,
-    op: &'ast SQLOperator,
-) {
-    visitor.visit_expr(expr);
-    visitor.visit_operator(op);
 }
 
 pub fn visit_function<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, func: &'ast SQLFunction) {
@@ -1165,49 +1208,36 @@ pub fn visit_column_def<'ast, V: Visit<'ast> + ?Sized>(
 ) {
     visitor.visit_ident(&column_def.name);
     visitor.visit_type(&column_def.data_type);
-    if let Some(collation) = &column_def.collation {
-        visitor.visit_object_name(&collation);
-    }
-    for constraint in &column_def.constraints {
-        visitor.visit_column_constraint(constraint);
+    for option in &column_def.options {
+        visitor.visit_column_option_def(option);
     }
 }
 
-pub fn visit_column_constraint<'ast, V: Visit<'ast> + ?Sized>(
+pub fn visit_column_option_def<'ast, V: Visit<'ast> + ?Sized>(
     visitor: &mut V,
-    constraint: &'ast ColumnConstraint,
+    column_option_def: &'ast ColumnOptionDef,
 ) {
-    match constraint {
-        ColumnConstraint::Null
-        | ColumnConstraint::NotNull
-        | ColumnConstraint::Unique { name: None, .. } => (),
-        ColumnConstraint::Default { name, expr } => {
-            if let Some(name) = name {
-                visitor.visit_ident(name);
-            }
-            visitor.visit_expr(expr);
-        }
-        ColumnConstraint::Unique {
-            name: Some(name), ..
-        } => visitor.visit_ident(name),
-        ColumnConstraint::ForeignKey {
-            name,
+    if let Some(name) = &column_option_def.name {
+        visitor.visit_ident(name);
+    }
+    visitor.visit_column_option(&column_option_def.option)
+}
+
+pub fn visit_column_option<'ast, V: Visit<'ast> + ?Sized>(
+    visitor: &mut V,
+    column_option: &'ast ColumnOption,
+) {
+    match column_option {
+        ColumnOption::Null | ColumnOption::NotNull | ColumnOption::Unique { .. } => (),
+        ColumnOption::Default(expr) | ColumnOption::Check(expr) => visitor.visit_expr(expr),
+        ColumnOption::ForeignKey {
             foreign_table,
             referred_columns,
         } => {
-            if let Some(name) = name {
-                visitor.visit_ident(name);
-            }
             visitor.visit_object_name(foreign_table);
             for column in referred_columns {
                 visitor.visit_ident(column);
             }
-        }
-        ColumnConstraint::Check { name, expr } => {
-            if let Some(name) = name {
-                visitor.visit_ident(name);
-            }
-            visitor.visit_expr(expr);
         }
     }
 }
@@ -1323,6 +1353,38 @@ pub fn visit_alter_drop_constraint<'ast, V: Visit<'ast> + ?Sized>(
     visitor.visit_ident(name);
 }
 
+pub fn visit_start_transaction<'ast, V: Visit<'ast> + ?Sized>(
+    visitor: &mut V,
+    modes: &'ast [TransactionMode],
+) {
+    for mode in modes {
+        visitor.visit_transaction_mode(mode)
+    }
+}
+
+pub fn visit_set_transaction<'ast, V: Visit<'ast> + ?Sized>(
+    visitor: &mut V,
+    modes: &'ast [TransactionMode],
+) {
+    for mode in modes {
+        visitor.visit_transaction_mode(mode)
+    }
+}
+
+pub fn visit_transaction_mode<'ast, V: Visit<'ast> + ?Sized>(
+    visitor: &mut V,
+    mode: &'ast TransactionMode,
+) {
+    match mode {
+        TransactionMode::AccessMode(access_mode) => {
+            visitor.visit_transaction_access_mode(access_mode)
+        }
+        TransactionMode::IsolationLevel(isolation_level) => {
+            visitor.visit_transaction_isolation_level(isolation_level)
+        }
+    }
+}
+
 pub fn visit_peek<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, name: &'ast SQLObjectName) {
     visitor.visit_object_name(name);
 }
@@ -1356,38 +1418,44 @@ mod tests {
             r#"
             WITH a01 AS (SELECT 1)
                 SELECT *, a02.*, a03 AS a04
-                FROM (SELECT * FROM a05) a06
-                JOIN a07 ON a08.a09 = a10.a11
-                WHERE a12
-                GROUP BY a13
-                HAVING a14
+                FROM (SELECT * FROM a05) a06 (a07)
+                JOIN a08 ON a09.a10 = a11.a12
+                WHERE a13
+                GROUP BY a14
+                HAVING a15
             UNION ALL
-                SELECT a15 IS NULL
-                    AND a16 IS NOT NULL
-                    AND a17 IN (a18)
-                    AND a19 IN (SELECT * FROM a20)
-                    AND CAST(a21 AS int)
-                    AND (a22)
-                    AND NOT a23
-                    AND a24(a25)
-                    AND CASE a26 WHEN a27 THEN a28 ELSE a29 END
-                    AND a30 BETWEEN a31 AND a32
-                    AND a33 COLLATE a34 = a35
-                    AND (SELECT a36)
-                FROM a37(a38) AS a39 WITH (a40)
-                LEFT JOIN a41 ON false
-                RIGHT JOIN a42 ON false
-                FULL JOIN a43 ON false
-                JOIN a44 (a45) USING (a46)
+                SELECT a16 IS NULL
+                    AND a17 IS NOT NULL
+                    AND a18 IN (a19)
+                    AND a20 IN (SELECT * FROM a21)
+                    AND CAST(a22 AS int)
+                    AND (a23)
+                    AND NOT a24
+                    AND a25(a26)
+                    AND CASE a27 WHEN a28 THEN a29 ELSE a30 END
+                    AND a31 BETWEEN a32 AND a33
+                    AND a34 COLLATE a35 = a36
+                    AND EXTRACT(YEAR FROM a37)
+                    AND (SELECT a38)
+                    AND EXISTS (SELECT a39)
+                FROM a40(a41) AS a42 WITH (a43)
+                LEFT JOIN a44 ON false
+                RIGHT JOIN a45 ON false
+                FULL JOIN a46 ON false
+                JOIN a47 (a48) USING (a49)
+                NATURAL JOIN (a50 NATURAL JOIN a51)
             EXCEPT
-                (SELECT a47(a48) OVER (PARTITION BY a49 ORDER BY a50 ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING))
-            ORDER BY a51
+                (SELECT a52(a53) OVER (PARTITION BY a54 ORDER BY a55 ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING))
+            ORDER BY a56
             LIMIT 1;
-            UPDATE b01 SET b02 = b03;
+            UPDATE b01 SET b02 = b03 WHERE b04;
             INSERT INTO c01 (c02) VALUES (c03);
             INSERT INTO c04 SELECT * FROM c05;
             DELETE FROM d01 WHERE d02;
-            CREATE TABLE e01 (e02 INT) WITH (e03 = 1);
+            CREATE TABLE e01 (
+                e02 INT PRIMARY KEY DEFAULT e03 CHECK (e04),
+                CHECK (e05)
+            ) WITH (e06 = 1);
             CREATE VIEW f01 (f02) WITH (f03 = 1) AS SELECT * FROM f04;
             ALTER TABLE g01 ADD CONSTRAINT g02 PRIMARY KEY (g03);
             ALTER TABLE h01 ADD CONSTRAINT h02 FOREIGN KEY (h03) REFERENCES h04 (h05);
@@ -1395,7 +1463,10 @@ mod tests {
             DROP TABLE j01;
             DROP VIEW k01;
             COPY l01 (l02) FROM stdin;
-            1
+            START TRANSACTION READ ONLY;
+            SET TRANSACTION ISOLATION LEVEL READ COMMITTED;
+            COMMIT;
+            ROLLBACK;
 "#
             .into(),
         )?;
@@ -1415,11 +1486,11 @@ mod tests {
                 "a13", "a14", "a15", "a16", "a17", "a18", "a19", "a20", "a21", "a22", "a23", "a24",
                 "a25", "a26", "a27", "a28", "a29", "a30", "a31", "a32", "a33", "a34", "a35", "a36",
                 "a37", "a38", "a39", "a40", "a41", "a42", "a43", "a44", "a45", "a46", "a47", "a48",
-                "a49", "a50", "a51",
-                "b01", "b02", "b03",
+                "a49", "a50", "a51", "a52", "a53", "a54", "a55", "a56",
+                "b01", "b02", "b03", "b04",
                 "c01", "c02", "c03", "c04", "c05",
                 "d01", "d02",
-                "e01", "e02", "e03",
+                "e01", "e02", "e03", "e04", "e05", "e06",
                 "f01", "f02", "f03", "f04",
                 "g01", "g02", "g03",
                 "h01", "h02", "h03", "h04", "h05",
