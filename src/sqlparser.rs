@@ -837,40 +837,33 @@ impl Parser {
         } else if self.parse_keyword("MATERIALIZED") || self.parse_keyword("VIEW") {
             self.prev_token();
             self.parse_create_view()
-        } else if self.parse_keyword("DATA") {
-            if self.parse_keyword("SOURCE") {
-                self.parse_create_data_source()
-            } else if self.parse_keyword("SINK") {
-                self.parse_create_data_sink()
-            } else {
-                parser_err!(format!(
-                    "Expected SOURCE or SINK after CREATE DATA, found: {:?}",
-                    self.peek_token()
-                ))
-            }
+        } else if self.parse_keyword("SOURCE") {
+            self.parse_create_source()
+        } else if self.parse_keyword("SINK") {
+            self.parse_create_sink()
         } else if self.parse_keyword("EXTERNAL") {
             self.parse_create_external_table()
         } else {
-            self.expected("TABLE or VIEW after CREATE", self.peek_token())
+            self.expected("TABLE, VIEW, SOURCE, or SINK after CREATE", self.peek_token())
         }
     }
 
-    pub fn parse_create_data_source(&mut self) -> Result<SQLStatement, ParserError> {
+    pub fn parse_create_source(&mut self) -> Result<SQLStatement, ParserError> {
         let name = self.parse_object_name()?;
         self.expect_keyword("FROM")?;
         let url = self.parse_literal_string()?;
         self.expect_keyword("USING")?;
         self.expect_keyword("SCHEMA")?;
         let schema = if self.parse_keyword("REGISTRY") {
-            DataSourceSchema::Registry(self.parse_literal_string()?)
+            SourceSchema::Registry(self.parse_literal_string()?)
         } else {
-            DataSourceSchema::Raw(self.parse_literal_string()?)
+            SourceSchema::Raw(self.parse_literal_string()?)
         };
         let mut with_options = vec![];
         if self.parse_keyword("WITH") {
             with_options = self.parse_with_options()?;
         }
-        Ok(SQLStatement::SQLCreateDataSource {
+        Ok(SQLStatement::SQLCreateSource {
             name,
             url,
             schema,
@@ -878,7 +871,7 @@ impl Parser {
         })
     }
 
-    pub fn parse_create_data_sink(&mut self) -> Result<SQLStatement, ParserError> {
+    pub fn parse_create_sink(&mut self) -> Result<SQLStatement, ParserError> {
         let name = self.parse_object_name()?;
         self.expect_keyword("FROM")?;
         let from = self.parse_object_name()?;
@@ -888,7 +881,7 @@ impl Parser {
         if self.parse_keyword("WITH") {
             with_options = self.parse_with_options()?;
         }
-        Ok(SQLStatement::SQLCreateDataSink {
+        Ok(SQLStatement::SQLCreateSink {
             name,
             from,
             url,
@@ -947,10 +940,10 @@ impl Parser {
             SQLObjectType::Table
         } else if self.parse_keyword("VIEW") {
             SQLObjectType::View
-        } else if self.parse_keywords(vec!["DATA", "SOURCE"]) {
-            SQLObjectType::DataSource
-        } else if self.parse_keywords(vec!["DATA", "SINK"]) {
-            SQLObjectType::DataSink
+        } else if self.parse_keywords(vec!["SOURCE"]) {
+            SQLObjectType::Source
+        } else if self.parse_keywords(vec!["SINK"]) {
+            SQLObjectType::Sink
         } else {
             return parser_err!(format!(
                 "Unexpected token after DROP: {:?}",

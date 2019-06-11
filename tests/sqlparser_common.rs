@@ -2053,10 +2053,10 @@ fn parse_create_materialized_view() {
 }
 
 #[test]
-fn parse_create_data_source_raw_schema() {
-    let sql = "CREATE DATA SOURCE foo FROM 'bar' USING SCHEMA 'baz' WITH (name = 'val')";
+fn parse_create_source_raw_schema() {
+    let sql = "CREATE SOURCE foo FROM 'bar' USING SCHEMA 'baz' WITH (name = 'val')";
     match verified_stmt(sql) {
-        SQLStatement::SQLCreateDataSource {
+        SQLStatement::SQLCreateSource {
             name,
             url,
             schema,
@@ -2064,7 +2064,7 @@ fn parse_create_data_source_raw_schema() {
         } => {
             assert_eq!("foo", name.to_string());
             assert_eq!("bar", url);
-            assert_eq!(DataSourceSchema::Raw("baz".into()), schema);
+            assert_eq!(SourceSchema::Raw("baz".into()), schema);
             assert_eq!(
                 with_options,
                 vec![SQLOption {
@@ -2078,10 +2078,10 @@ fn parse_create_data_source_raw_schema() {
 }
 
 #[test]
-fn parse_create_data_source_registry() {
-    let sql = "CREATE DATA SOURCE foo FROM 'bar' USING SCHEMA REGISTRY 'http://localhost:8081'";
+fn parse_create_source_registry() {
+    let sql = "CREATE SOURCE foo FROM 'bar' USING SCHEMA REGISTRY 'http://localhost:8081'";
     match verified_stmt(sql) {
-        SQLStatement::SQLCreateDataSource {
+        SQLStatement::SQLCreateSource {
             name,
             url,
             schema,
@@ -2090,7 +2090,7 @@ fn parse_create_data_source_registry() {
             assert_eq!("foo", name.to_string());
             assert_eq!("bar", url);
             assert_eq!(
-                DataSourceSchema::Registry("http://localhost:8081".into()),
+                SourceSchema::Registry("http://localhost:8081".into()),
                 schema
             );
             assert_eq!(with_options, vec![]);
@@ -2100,10 +2100,10 @@ fn parse_create_data_source_registry() {
 }
 
 #[test]
-fn parse_create_data_sink() {
-    let sql = "CREATE DATA SINK foo FROM bar INTO 'baz' WITH (name = 'val')";
+fn parse_create_sink() {
+    let sql = "CREATE SINK foo FROM bar INTO 'baz' WITH (name = 'val')";
     match verified_stmt(sql) {
-        SQLStatement::SQLCreateDataSink {
+        SQLStatement::SQLCreateSink {
             name,
             from,
             url,
@@ -2195,8 +2195,8 @@ fn parse_drop_view() {
 }
 
 #[test]
-fn parse_drop_data_source() {
-    let sql = "DROP DATA SOURCE myschema.mydatasource";
+fn parse_drop_source() {
+    let sql = "DROP SOURCE myschema.mydatasource";
     match verified_stmt(sql) {
         SQLStatement::SQLDrop {
             object_type,
@@ -2205,7 +2205,7 @@ fn parse_drop_data_source() {
             cascade,
         } => {
             assert_eq!(false, if_exists);
-            assert_eq!(SQLObjectType::DataSource, object_type);
+            assert_eq!(SQLObjectType::Source, object_type);
             assert_eq!(
                 vec!["myschema.mydatasource"],
                 names.iter().map(|n| n.to_string()).collect::<Vec<_>>()

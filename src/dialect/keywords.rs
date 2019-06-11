@@ -133,7 +133,6 @@ define_keywords!(
     CURRENT_USER,
     CURSOR,
     CYCLE,
-    DATA,
     DATE,
     DAY,
     DEALLOCATE,

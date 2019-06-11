@@ -380,15 +380,15 @@ pub enum SQLStatement {
         /// WHERE
         selection: Option<ASTNode>,
     },
-    /// CREATE DATA SOURCE
-    SQLCreateDataSource {
+    /// CREATE SOURCE
+    SQLCreateSource {
         name: SQLObjectName,
         url: String,
-        schema: DataSourceSchema,
+        schema: SourceSchema,
         with_options: Vec<SQLOption>,
     },
-    /// CREATE DATA SINK
-    SQLCreateDataSink {
+    /// CREATE SINK
+    SQLCreateSink {
         name: SQLObjectName,
         from: SQLObjectName,
         url: String,
@@ -510,7 +510,7 @@ impl ToString for SQLStatement {
                 }
                 s
             }
-            SQLStatement::SQLCreateDataSource {
+            SQLStatement::SQLCreateSource {
                 name,
                 url,
                 schema,
@@ -522,14 +522,14 @@ impl ToString for SQLStatement {
                     "".into()
                 };
                 format!(
-                    "CREATE DATA SOURCE {} FROM {} USING SCHEMA {}{}",
+                    "CREATE SOURCE {} FROM {} USING SCHEMA {}{}",
                     name.to_string(),
                     Value::SingleQuotedString(url.clone()).to_string(),
                     match schema {
-                        DataSourceSchema::Raw(schema) => {
+                        SourceSchema::Raw(schema) => {
                             Value::SingleQuotedString(schema.clone()).to_string()
                         }
-                        DataSourceSchema::Registry(url) => format!(
+                        SourceSchema::Registry(url) => format!(
                             "REGISTRY {}",
                             Value::SingleQuotedString(url.clone()).to_string()
                         ),
@@ -537,7 +537,7 @@ impl ToString for SQLStatement {
                     with_options
                 )
             }
-            SQLStatement::SQLCreateDataSink {
+            SQLStatement::SQLCreateSink {
                 name,
                 from,
                 url,
@@ -549,7 +549,7 @@ impl ToString for SQLStatement {
                     "".into()
                 };
                 format!(
-                    "CREATE DATA SINK {} FROM {} INTO {}{}",
+                    "CREATE SINK {} FROM {} INTO {}{}",
                     name.to_string(),
                     from.to_string(),
                     Value::SingleQuotedString(url.clone()).to_string(),
@@ -707,7 +707,7 @@ impl ToString for SQLFunction {
 
 /// Specifies the schema associated with a given Kafka topic.
 #[derive(Debug, Clone, PartialEq, Hash)]
-pub enum DataSourceSchema {
+pub enum SourceSchema {
     /// The schema is specified directly in the contained string.
     Raw(String),
     /// The schema is available in a Confluent-compatible schema registry that
@@ -769,8 +769,8 @@ impl FromStr for FileFormat {
 pub enum SQLObjectType {
     Table,
     View,
-    DataSource,
-    DataSink,
+    Source,
+    Sink,
 }
 
 impl SQLObjectType {
@@ -778,8 +778,8 @@ impl SQLObjectType {
         match self {
             SQLObjectType::Table => "TABLE".into(),
             SQLObjectType::View => "VIEW".into(),
-            SQLObjectType::DataSource => "DATA SOURCE".into(),
-            SQLObjectType::DataSink => "DATA SINK".into(),
+            SQLObjectType::Source => "SOURCE".into(),
+            SQLObjectType::Sink => "SINK".into(),
         }
     }
 }
