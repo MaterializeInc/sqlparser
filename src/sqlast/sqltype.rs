@@ -13,7 +13,7 @@
 use super::SQLObjectName;
 
 /// SQL data types
-#[derive(Debug, Clone, PartialEq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum SQLType {
     /// Fixed-length character type e.g. CHAR(10)
     Char(Option<u64>),
