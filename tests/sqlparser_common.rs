@@ -1156,6 +1156,21 @@ fn parse_aggregate_with_group_by() {
 }
 
 #[test]
+fn parse_having() {
+    let sql = "SELECT 1 HAVING true";
+    let ast = verified_only_select(sql);
+    assert_eq!(&Some(ASTNode::SQLValue(Value::Boolean(true))), &ast.having);
+
+    let sql = "SELECT a FROM foo HAVING true";
+    let ast = verified_only_select(sql);
+    assert_eq!(&Some(ASTNode::SQLValue(Value::Boolean(true))), &ast.having);
+
+    let sql = "SELECT a FROM foo GROUP BY a, b HAVING true";
+    let ast = verified_only_select(sql);
+    assert_eq!(&Some(ASTNode::SQLValue(Value::Boolean(true))), &ast.having);
+}
+
+#[test]
 fn parse_literal_string() {
     let sql = "SELECT 'one', N'national string', X'deadBEEF'";
     let select = verified_only_select(sql);
