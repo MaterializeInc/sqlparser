@@ -53,7 +53,7 @@ pub type Ident = String;
 /// The parser does not distinguish between expressions of different types
 /// (e.g. boolean vs string), so the caller must handle expressions of
 /// inappropriate type, like `WHERE 1` or `SELECT 1=1`, as necessary.
-#[derive(Debug, Clone, PartialEq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Expr {
     /// Identifier e.g. table name or column name
     Identifier(Ident),
@@ -233,7 +233,7 @@ impl ToString for Expr {
 }
 
 /// A window specification (i.e. `OVER (PARTITION BY .. ORDER BY .. etc.)`)
-#[derive(Debug, Clone, PartialEq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct WindowSpec {
     pub partition_by: Vec<Expr>,
     pub order_by: Vec<OrderByExpr>,
@@ -277,7 +277,7 @@ impl ToString for WindowSpec {
 
 /// Specifies the data processed by a window function, e.g.
 /// `RANGE UNBOUNDED PRECEDING` or `ROWS BETWEEN 5 PRECEDING AND CURRENT ROW`.
-#[derive(Debug, Clone, PartialEq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct WindowFrame {
     pub units: WindowFrameUnits,
     pub start_bound: WindowFrameBound,
@@ -286,7 +286,7 @@ pub struct WindowFrame {
     // TBD: EXCLUDE
 }
 
-#[derive(Debug, Clone, PartialEq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum WindowFrameUnits {
     Rows,
     Range,
@@ -319,7 +319,7 @@ impl FromStr for WindowFrameUnits {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum WindowFrameBound {
     /// "CURRENT ROW"
     CurrentRow,
@@ -344,7 +344,7 @@ impl ToString for WindowFrameBound {
 
 /// A top-level statement (SELECT, INSERT, CREATE, etc.)
 #[allow(clippy::large_enum_variant)]
-#[derive(Debug, Clone, PartialEq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Statement {
     /// SELECT
     Query(Box<Query>),
@@ -589,7 +589,7 @@ impl ToString for Statement {
 }
 
 /// A name of a table, view, custom type, etc., possibly multi-part, i.e. db.schema.obj
-#[derive(Debug, Clone, PartialEq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ObjectName(pub Vec<Ident>);
 
 impl ToString for ObjectName {
@@ -599,7 +599,7 @@ impl ToString for ObjectName {
 }
 
 /// SQL assignment `foo = expr` as used in SQLUpdate
-#[derive(Debug, Clone, PartialEq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Assignment {
     pub id: Ident,
     pub value: Expr,
@@ -612,7 +612,7 @@ impl ToString for Assignment {
 }
 
 /// SQL function
-#[derive(Debug, Clone, PartialEq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Function {
     pub name: ObjectName,
     pub args: Vec<Expr>,
@@ -637,7 +637,7 @@ impl ToString for Function {
 }
 
 /// External table's available file format
-#[derive(Debug, Clone, PartialEq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum FileFormat {
     TEXTFILE,
     SEQUENCEFILE,
@@ -686,7 +686,7 @@ impl FromStr for FileFormat {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ObjectType {
     Table,
     View,
@@ -701,7 +701,7 @@ impl ObjectType {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct SqlOption {
     pub name: Ident,
     pub value: Value,
@@ -713,7 +713,7 @@ impl ToString for SqlOption {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum TransactionMode {
     AccessMode(TransactionAccessMode),
     IsolationLevel(TransactionIsolationLevel),
@@ -729,7 +729,7 @@ impl ToString for TransactionMode {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum TransactionAccessMode {
     ReadOnly,
     ReadWrite,
@@ -745,7 +745,7 @@ impl ToString for TransactionAccessMode {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum TransactionIsolationLevel {
     ReadUncommitted,
     ReadCommitted,
