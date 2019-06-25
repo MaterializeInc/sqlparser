@@ -209,11 +209,11 @@ pub trait Visit<'ast> {
         visit_collate(self, expr, collation)
     }
 
-    fn visit_extract(&mut self, field: &'ast SQLDateTimeField, expr: &'ast Expr) {
+    fn visit_extract(&mut self, field: &'ast DateTimeField, expr: &'ast Expr) {
         visit_extract(self, field, expr)
     }
 
-    fn visit_date_time_field(&mut self, _field: &'ast SQLDateTimeField) {}
+    fn visit_date_time_field(&mut self, _field: &'ast DateTimeField) {}
 
     fn visit_nested(&mut self, expr: &'ast Expr) {
         visit_nested(self, expr)
@@ -873,7 +873,7 @@ pub fn visit_collate<'ast, V: Visit<'ast> + ?Sized>(
 
 pub fn visit_extract<'ast, V: Visit<'ast> + ?Sized>(
     visitor: &mut V,
-    field: &'ast SQLDateTimeField,
+    field: &'ast DateTimeField,
     expr: &'ast Expr,
 ) {
     visitor.visit_date_time_field(field);
