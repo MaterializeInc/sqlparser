@@ -15,22 +15,22 @@ use super::*;
 /// The most complete variant of a `SELECT` query expression, optionally
 /// including `WITH`, `UNION` / other set operations, and `ORDER BY`.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct SQLQuery {
+pub struct Query {
     /// WITH (common table expressions, or CTEs)
     pub ctes: Vec<Cte>,
     /// SELECT or UNION / EXCEPT / INTECEPT
-    pub body: SQLSetExpr,
+    pub body: SetExpr,
     /// ORDER BY
-    pub order_by: Vec<SQLOrderByExpr>,
-    /// LIMIT { <N> | ALL }
-    pub limit: Option<ASTNode>,
-    /// OFFSET <N> { ROW | ROWS }
-    pub offset: Option<ASTNode>,
-    /// FETCH { FIRST | NEXT } <N> [ PERCENT ] { ROW | ROWS } | { ONLY | WITH TIES }
+    pub order_by: Vec<OrderByExpr>,
+    /// `LIMIT { <N> | ALL }`
+    pub limit: Option<Expr>,
+    /// `OFFSET <N> { ROW | ROWS }`
+    pub offset: Option<Expr>,
+    /// `FETCH { FIRST | NEXT } <N> [ PERCENT ] { ROW | ROWS } | { ONLY | WITH TIES }`
     pub fetch: Option<Fetch>,
 }
 
-impl ToString for SQLQuery {
+impl ToString for Query {
     fn to_string(&self) -> String {
         let mut s = String::new();
         if !self.ctes.is_empty() {
@@ -57,30 +57,30 @@ impl ToString for SQLQuery {
 /// A node in a tree, representing a "query body" expression, roughly:
 /// `SELECT ... [ {UNION|EXCEPT|INTERSECT} SELECT ...]`
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum SQLSetExpr {
+pub enum SetExpr {
     /// Restricted SELECT .. FROM .. HAVING (no ORDER BY or set operations)
-    Select(Box<SQLSelect>),
+    Select(Box<Select>),
     /// Parenthesized SELECT subquery, which may include more set operations
     /// in its body and an optional ORDER BY / LIMIT.
-    Query(Box<SQLQuery>),
+    Query(Box<Query>),
     /// UNION/EXCEPT/INTERSECT of two queries
     SetOperation {
-        op: SQLSetOperator,
+        op: SetOperator,
         all: bool,
-        left: Box<SQLSetExpr>,
-        right: Box<SQLSetExpr>,
+        left: Box<SetExpr>,
+        right: Box<SetExpr>,
     },
-    Values(SQLValues),
+    Values(Values),
     // TODO: ANSI SQL supports `TABLE` here.
 }
 
-impl ToString for SQLSetExpr {
+impl ToString for SetExpr {
     fn to_string(&self) -> String {
         match self {
-            SQLSetExpr::Select(s) => s.to_string(),
-            SQLSetExpr::Query(q) => format!("({})", q.to_string()),
-            SQLSetExpr::Values(v) => v.to_string(),
-            SQLSetExpr::SetOperation {
+            SetExpr::Select(s) => s.to_string(),
+            SetExpr::Query(q) => format!("({})", q.to_string()),
+            SetExpr::Values(v) => v.to_string(),
+            SetExpr::SetOperation {
                 left,
                 right,
                 op,
@@ -100,18 +100,18 @@ impl ToString for SQLSetExpr {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum SQLSetOperator {
+pub enum SetOperator {
     Union,
     Except,
     Intersect,
 }
 
-impl ToString for SQLSetOperator {
+impl ToString for SetOperator {
     fn to_string(&self) -> String {
         match self {
-            SQLSetOperator::Union => "UNION".to_string(),
-            SQLSetOperator::Except => "EXCEPT".to_string(),
-            SQLSetOperator::Intersect => "INTERSECT".to_string(),
+            SetOperator::Union => "UNION".to_string(),
+            SetOperator::Except => "EXCEPT".to_string(),
+            SetOperator::Intersect => "INTERSECT".to_string(),
         }
     }
 }
@@ -120,21 +120,21 @@ impl ToString for SQLSetOperator {
 /// appear either as the only body item of an `SQLQuery`, or as an operand
 /// to a set operation like `UNION`.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct SQLSelect {
+pub struct Select {
     pub distinct: bool,
     /// projection expressions
-    pub projection: Vec<SQLSelectItem>,
+    pub projection: Vec<SelectItem>,
     /// FROM
     pub from: Vec<TableWithJoins>,
     /// WHERE
-    pub selection: Option<ASTNode>,
+    pub selection: Option<Expr>,
     /// GROUP BY
-    pub group_by: Vec<ASTNode>,
+    pub group_by: Vec<Expr>,
     /// HAVING
-    pub having: Option<ASTNode>,
+    pub having: Option<Expr>,
 }
 
-impl ToString for SQLSelect {
+impl ToString for Select {
     fn to_string(&self) -> String {
         let mut s = format!(
             "SELECT{} {}",
@@ -163,43 +163,38 @@ impl ToString for SQLSelect {
 /// number of columns in the query matches the number of columns in the query.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Cte {
-    pub alias: SQLIdent,
-    pub query: SQLQuery,
-    pub renamed_columns: Vec<SQLIdent>,
+    pub alias: TableAlias,
+    pub query: Query,
 }
 
 impl ToString for Cte {
     fn to_string(&self) -> String {
-        let mut s = self.alias.clone();
-        if !self.renamed_columns.is_empty() {
-            s += &format!(" ({})", comma_separated_string(&self.renamed_columns));
-        }
-        s + &format!(" AS ({})", self.query.to_string())
+        format!("{} AS ({})", self.alias.to_string(), self.query.to_string())
     }
 }
 
 /// One item of the comma-separated list following `SELECT`
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum SQLSelectItem {
+pub enum SelectItem {
     /// Any expression, not followed by `[ AS ] alias`
-    UnnamedExpression(ASTNode),
+    UnnamedExpr(Expr),
     /// An expression, followed by `[ AS ] alias`
-    ExpressionWithAlias { expr: ASTNode, alias: SQLIdent },
+    ExprWithAlias { expr: Expr, alias: Ident },
     /// `alias.*` or even `schema.table.*`
-    QualifiedWildcard(SQLObjectName),
+    QualifiedWildcard(ObjectName),
     /// An unqualified `*`
     Wildcard,
 }
 
-impl ToString for SQLSelectItem {
+impl ToString for SelectItem {
     fn to_string(&self) -> String {
         match &self {
-            SQLSelectItem::UnnamedExpression(expr) => expr.to_string(),
-            SQLSelectItem::ExpressionWithAlias { expr, alias } => {
+            SelectItem::UnnamedExpr(expr) => expr.to_string(),
+            SelectItem::ExprWithAlias { expr, alias } => {
                 format!("{} AS {}", expr.to_string(), alias)
             }
-            SQLSelectItem::QualifiedWildcard(prefix) => format!("{}.*", prefix.to_string()),
-            SQLSelectItem::Wildcard => "*".to_string(),
+            SelectItem::QualifiedWildcard(prefix) => format!("{}.*", prefix.to_string()),
+            SelectItem::Wildcard => "*".to_string(),
         }
     }
 }
@@ -224,20 +219,24 @@ impl ToString for TableWithJoins {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum TableFactor {
     Table {
-        name: SQLObjectName,
+        name: ObjectName,
         alias: Option<TableAlias>,
         /// Arguments of a table-valued function, as supported by Postgres
         /// and MSSQL. Note that deprecated MSSQL `FROM foo (NOLOCK)` syntax
         /// will also be parsed as `args`.
-        args: Vec<ASTNode>,
+        args: Vec<Expr>,
         /// MSSQL-specific `WITH (...)` hints such as NOLOCK.
-        with_hints: Vec<ASTNode>,
+        with_hints: Vec<Expr>,
     },
     Derived {
         lateral: bool,
-        subquery: Box<SQLQuery>,
+        subquery: Box<Query>,
         alias: Option<TableAlias>,
     },
+    /// Represents a parenthesized join expression, such as
+    /// `(foo <JOIN> bar [ <JOIN> baz ... ])`.
+    /// The inner `TableWithJoins` can have no joins only if its
+    /// `relation` is itself a `TableFactor::NestedJoin`.
     NestedJoin(Box<TableWithJoins>),
 }
 
@@ -286,8 +285,8 @@ impl ToString for TableFactor {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TableAlias {
-    pub name: SQLIdent,
-    pub columns: Vec<SQLIdent>,
+    pub name: Ident,
+    pub columns: Vec<Ident>,
 }
 
 impl ToString for TableAlias {
@@ -328,7 +327,6 @@ impl ToString for Join {
                 self.relation.to_string(),
                 suffix(constraint)
             ),
-            JoinOperator::Cross => format!(" CROSS JOIN {}", self.relation.to_string()),
             JoinOperator::LeftOuter(constraint) => format!(
                 " {}LEFT JOIN {}{}",
                 prefix(constraint),
@@ -347,6 +345,9 @@ impl ToString for Join {
                 self.relation.to_string(),
                 suffix(constraint)
             ),
+            JoinOperator::CrossJoin => format!(" CROSS JOIN {}", self.relation.to_string()),
+            JoinOperator::CrossApply => format!(" CROSS APPLY {}", self.relation.to_string()),
+            JoinOperator::OuterApply => format!(" OUTER APPLY {}", self.relation.to_string()),
         }
     }
 }
@@ -357,24 +358,28 @@ pub enum JoinOperator {
     LeftOuter(JoinConstraint),
     RightOuter(JoinConstraint),
     FullOuter(JoinConstraint),
-    Cross,
+    CrossJoin,
+    /// CROSS APPLY (non-standard)
+    CrossApply,
+    /// OUTER APPLY (non-standard)
+    OuterApply,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum JoinConstraint {
-    On(ASTNode),
-    Using(Vec<SQLIdent>),
+    On(Expr),
+    Using(Vec<Ident>),
     Natural,
 }
 
 /// SQL ORDER BY expression
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct SQLOrderByExpr {
-    pub expr: ASTNode,
+pub struct OrderByExpr {
+    pub expr: Expr,
     pub asc: Option<bool>,
 }
 
-impl ToString for SQLOrderByExpr {
+impl ToString for OrderByExpr {
     fn to_string(&self) -> String {
         match self.asc {
             Some(true) => format!("{} ASC", self.expr.to_string()),
@@ -388,7 +393,7 @@ impl ToString for SQLOrderByExpr {
 pub struct Fetch {
     pub with_ties: bool,
     pub percent: bool,
-    pub quantity: Option<ASTNode>,
+    pub quantity: Option<Expr>,
 }
 
 impl ToString for Fetch {
@@ -409,9 +414,9 @@ impl ToString for Fetch {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct SQLValues(pub Vec<Vec<ASTNode>>);
+pub struct Values(pub Vec<Vec<Expr>>);
 
-impl ToString for SQLValues {
+impl ToString for Values {
     fn to_string(&self) -> String {
         let rows = self
             .0

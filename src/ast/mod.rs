@@ -12,25 +12,25 @@
 
 //! SQL Abstract Syntax Tree (AST) types
 
+mod data_type;
 mod ddl;
+mod operator;
 mod query;
-mod sql_operator;
-mod sqltype;
 mod value;
 pub mod visit;
 
 use std::ops::Deref;
 
+pub use self::data_type::DataType;
 pub use self::ddl::{
-    AlterTableOperation, ColumnOption, ColumnOptionDef, SQLColumnDef, TableConstraint,
+    AlterTableOperation, ColumnDef, ColumnOption, ColumnOptionDef, TableConstraint,
 };
+pub use self::operator::{BinaryOperator, UnaryOperator};
 pub use self::query::{
-    Cte, Fetch, Join, JoinConstraint, JoinOperator, SQLOrderByExpr, SQLQuery, SQLSelect,
-    SQLSelectItem, SQLSetExpr, SQLSetOperator, SQLValues, TableAlias, TableFactor, TableWithJoins,
+    Cte, Fetch, Join, JoinConstraint, JoinOperator, OrderByExpr, Query, Select, SelectItem,
+    SetExpr, SetOperator, TableAlias, TableFactor, TableWithJoins, Values,
 };
-pub use self::sql_operator::{SQLBinaryOperator, SQLUnaryOperator};
-pub use self::sqltype::SQLType;
-pub use self::value::{SQLDateTimeField, Value};
+pub use self::value::{DateTimeField, Value};
 
 /// Like `vec.join(", ")`, but for any types implementing ToString.
 fn comma_separated_string<I>(iter: I) -> String
@@ -46,7 +46,7 @@ where
 }
 
 /// Identifier name, in the originally quoted form (e.g. `"id"`)
-pub type SQLIdent = String;
+pub type Ident = String;
 
 /// An SQL expression of any type.
 ///
@@ -54,100 +54,101 @@ pub type SQLIdent = String;
 /// (e.g. boolean vs string), so the caller must handle expressions of
 /// inappropriate type, like `WHERE 1` or `SELECT 1=1`, as necessary.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum ASTNode {
+pub enum Expr {
     /// Identifier e.g. table name or column name
-    SQLIdentifier(SQLIdent),
-    /// Unqualified wildcard (`*`). SQL allows this in limited contexts (such as right
-    /// after `SELECT` or as part of an aggregate function, e.g. `COUNT(*)`, but we
-    /// currently accept it in contexts where it doesn't make sense, such as `* + *`
-    SQLWildcard,
+    Identifier(Ident),
+    /// Unqualified wildcard (`*`). SQL allows this in limited contexts, such as:
+    /// - right after `SELECT` (which is represented as a [SQLSelectItem::Wildcard] instead)
+    /// - or as part of an aggregate function, e.g. `COUNT(*)`,
+    ///
+    /// ...but we currently also accept it in contexts where it doesn't make
+    /// sense, such as `* + *`
+    Wildcard,
     /// Qualified wildcard, e.g. `alias.*` or `schema.table.*`.
     /// (Same caveats apply to SQLQualifiedWildcard as to SQLWildcard.)
-    SQLQualifiedWildcard(Vec<SQLIdent>),
+    QualifiedWildcard(Vec<Ident>),
     /// Multi-part identifier, e.g. `table_alias.column` or `schema.table.col`
-    SQLCompoundIdentifier(Vec<SQLIdent>),
+    CompoundIdentifier(Vec<Ident>),
     /// `IS NULL` expression
-    SQLIsNull(Box<ASTNode>),
+    IsNull(Box<Expr>),
     /// `IS NOT NULL` expression
-    SQLIsNotNull(Box<ASTNode>),
+    IsNotNull(Box<Expr>),
     /// `[ NOT ] IN (val1, val2, ...)`
-    SQLInList {
-        expr: Box<ASTNode>,
-        list: Vec<ASTNode>,
+    InList {
+        expr: Box<Expr>,
+        list: Vec<Expr>,
         negated: bool,
     },
     /// `[ NOT ] IN (SELECT ...)`
-    SQLInSubquery {
-        expr: Box<ASTNode>,
-        subquery: Box<SQLQuery>,
+    InSubquery {
+        expr: Box<Expr>,
+        subquery: Box<Query>,
         negated: bool,
     },
     /// `<expr> [ NOT ] BETWEEN <low> AND <high>`
-    SQLBetween {
-        expr: Box<ASTNode>,
+    Between {
+        expr: Box<Expr>,
         negated: bool,
-        low: Box<ASTNode>,
-        high: Box<ASTNode>,
+        low: Box<Expr>,
+        high: Box<Expr>,
     },
     /// Binary operation e.g. `1 + 1` or `foo > bar`
-    SQLBinaryOp {
-        left: Box<ASTNode>,
-        op: SQLBinaryOperator,
-        right: Box<ASTNode>,
+    BinaryOp {
+        left: Box<Expr>,
+        op: BinaryOperator,
+        right: Box<Expr>,
     },
     /// Unary operation e.g. `NOT foo`
-    SQLUnaryOp {
-        op: SQLUnaryOperator,
-        expr: Box<ASTNode>,
-    },
+    UnaryOp { op: UnaryOperator, expr: Box<Expr> },
     /// CAST an expression to a different data type e.g. `CAST(foo AS VARCHAR(123))`
-    SQLCast {
-        expr: Box<ASTNode>,
-        data_type: SQLType,
+    Cast {
+        expr: Box<Expr>,
+        data_type: DataType,
     },
-    SQLExtract {
-        field: SQLDateTimeField,
-        expr: Box<ASTNode>,
+    Extract {
+        field: DateTimeField,
+        expr: Box<Expr>,
     },
     /// `expr COLLATE collation`
-    SQLCollate {
-        expr: Box<ASTNode>,
-        collation: SQLObjectName,
+    Collate {
+        expr: Box<Expr>,
+        collation: ObjectName,
     },
     /// Nested expression e.g. `(foo > bar)` or `(1)`
-    SQLNested(Box<ASTNode>),
+    Nested(Box<Expr>),
     /// SQLValue
-    SQLValue(Value),
+    Value(Value),
     /// Scalar function call e.g. `LEFT(foo, 5)`
-    SQLFunction(SQLFunction),
-    /// CASE [<operand>] WHEN <condition> THEN <result> ... [ELSE <result>] END
-    /// Note we only recognize a complete single expression as <condition>, not
-    /// `< 0` nor `1, 2, 3` as allowed in a <simple when clause> per
-    /// https://jakewheat.github.io/sql-overview/sql-2011-foundation-grammar.html#simple-when-clause
-    SQLCase {
-        operand: Option<Box<ASTNode>>,
-        conditions: Vec<ASTNode>,
-        results: Vec<ASTNode>,
-        else_result: Option<Box<ASTNode>>,
+    Function(Function),
+    /// `CASE [<operand>] WHEN <condition> THEN <result> ... [ELSE <result>] END`
+    ///
+    /// Note we only recognize a complete single expression as `<condition>`,
+    /// not `< 0` nor `1, 2, 3` as allowed in a `<simple when clause>` per
+    /// <https://jakewheat.github.io/sql-overview/sql-2011-foundation-grammar.html#simple-when-clause>
+    Case {
+        operand: Option<Box<Expr>>,
+        conditions: Vec<Expr>,
+        results: Vec<Expr>,
+        else_result: Option<Box<Expr>>,
     },
     /// An exists expression `EXISTS(SELECT ...)`, used in expressions like
     /// `WHERE EXISTS (SELECT ...)`.
-    SQLExists(Box<SQLQuery>),
+    Exists(Box<Query>),
     /// A parenthesized subquery `(SELECT ...)`, used in expression like
     /// `SELECT (subquery) AS x` or `WHERE (subquery) = x`
-    SQLSubquery(Box<SQLQuery>),
+    Subquery(Box<Query>),
 }
 
-impl ToString for ASTNode {
+impl ToString for Expr {
     fn to_string(&self) -> String {
         match self {
-            ASTNode::SQLIdentifier(s) => s.to_string(),
-            ASTNode::SQLWildcard => "*".to_string(),
-            ASTNode::SQLQualifiedWildcard(q) => q.join(".") + ".*",
-            ASTNode::SQLCompoundIdentifier(s) => s.join("."),
-            ASTNode::SQLIsNull(ast) => format!("{} IS NULL", ast.as_ref().to_string()),
-            ASTNode::SQLIsNotNull(ast) => format!("{} IS NOT NULL", ast.as_ref().to_string()),
-            ASTNode::SQLInList {
+            Expr::Identifier(s) => s.to_string(),
+            Expr::Wildcard => "*".to_string(),
+            Expr::QualifiedWildcard(q) => q.join(".") + ".*",
+            Expr::CompoundIdentifier(s) => s.join("."),
+            Expr::IsNull(ast) => format!("{} IS NULL", ast.as_ref().to_string()),
+            Expr::IsNotNull(ast) => format!("{} IS NOT NULL", ast.as_ref().to_string()),
+            Expr::InList {
                 expr,
                 list,
                 negated,
@@ -157,7 +158,7 @@ impl ToString for ASTNode {
                 if *negated { "NOT " } else { "" },
                 comma_separated_string(list)
             ),
-            ASTNode::SQLInSubquery {
+            Expr::InSubquery {
                 expr,
                 subquery,
                 negated,
@@ -167,7 +168,7 @@ impl ToString for ASTNode {
                 if *negated { "NOT " } else { "" },
                 subquery.to_string()
             ),
-            ASTNode::SQLBetween {
+            Expr::Between {
                 expr,
                 negated,
                 low,
@@ -179,32 +180,32 @@ impl ToString for ASTNode {
                 low.to_string(),
                 high.to_string()
             ),
-            ASTNode::SQLBinaryOp { left, op, right } => format!(
+            Expr::BinaryOp { left, op, right } => format!(
                 "{} {} {}",
                 left.as_ref().to_string(),
                 op.to_string(),
                 right.as_ref().to_string()
             ),
-            ASTNode::SQLUnaryOp { op, expr } => {
+            Expr::UnaryOp { op, expr } => {
                 format!("{} {}", op.to_string(), expr.as_ref().to_string())
             }
-            ASTNode::SQLCast { expr, data_type } => format!(
+            Expr::Cast { expr, data_type } => format!(
                 "CAST({} AS {})",
                 expr.as_ref().to_string(),
                 data_type.to_string()
             ),
-            ASTNode::SQLExtract { field, expr } => {
+            Expr::Extract { field, expr } => {
                 format!("EXTRACT({} FROM {})", field.to_string(), expr.to_string())
             }
-            ASTNode::SQLCollate { expr, collation } => format!(
+            Expr::Collate { expr, collation } => format!(
                 "{} COLLATE {}",
                 expr.as_ref().to_string(),
                 collation.to_string()
             ),
-            ASTNode::SQLNested(ast) => format!("({})", ast.as_ref().to_string()),
-            ASTNode::SQLValue(v) => v.to_string(),
-            ASTNode::SQLFunction(f) => f.to_string(),
-            ASTNode::SQLCase {
+            Expr::Nested(ast) => format!("({})", ast.as_ref().to_string()),
+            Expr::Value(v) => v.to_string(),
+            Expr::Function(f) => f.to_string(),
+            Expr::Case {
                 operand,
                 conditions,
                 results,
@@ -225,21 +226,21 @@ impl ToString for ASTNode {
                 }
                 s + " END"
             }
-            ASTNode::SQLExists(s) => format!("EXISTS ({})", s.to_string()),
-            ASTNode::SQLSubquery(s) => format!("({})", s.to_string()),
+            Expr::Exists(s) => format!("EXISTS ({})", s.to_string()),
+            Expr::Subquery(s) => format!("({})", s.to_string()),
         }
     }
 }
 
 /// A window specification (i.e. `OVER (PARTITION BY .. ORDER BY .. etc.)`)
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct SQLWindowSpec {
-    pub partition_by: Vec<ASTNode>,
-    pub order_by: Vec<SQLOrderByExpr>,
-    pub window_frame: Option<SQLWindowFrame>,
+pub struct WindowSpec {
+    pub partition_by: Vec<Expr>,
+    pub order_by: Vec<OrderByExpr>,
+    pub window_frame: Option<WindowFrame>,
 }
 
-impl ToString for SQLWindowSpec {
+impl ToString for WindowSpec {
     fn to_string(&self) -> String {
         let mut clauses = vec![];
         if !self.partition_by.is_empty() {
@@ -277,39 +278,39 @@ impl ToString for SQLWindowSpec {
 /// Specifies the data processed by a window function, e.g.
 /// `RANGE UNBOUNDED PRECEDING` or `ROWS BETWEEN 5 PRECEDING AND CURRENT ROW`.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct SQLWindowFrame {
-    pub units: SQLWindowFrameUnits,
-    pub start_bound: SQLWindowFrameBound,
+pub struct WindowFrame {
+    pub units: WindowFrameUnits,
+    pub start_bound: WindowFrameBound,
     /// The right bound of the `BETWEEN .. AND` clause.
-    pub end_bound: Option<SQLWindowFrameBound>,
+    pub end_bound: Option<WindowFrameBound>,
     // TBD: EXCLUDE
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum SQLWindowFrameUnits {
+pub enum WindowFrameUnits {
     Rows,
     Range,
     Groups,
 }
 
-impl ToString for SQLWindowFrameUnits {
+impl ToString for WindowFrameUnits {
     fn to_string(&self) -> String {
         match self {
-            SQLWindowFrameUnits::Rows => "ROWS".to_string(),
-            SQLWindowFrameUnits::Range => "RANGE".to_string(),
-            SQLWindowFrameUnits::Groups => "GROUPS".to_string(),
+            WindowFrameUnits::Rows => "ROWS".to_string(),
+            WindowFrameUnits::Range => "RANGE".to_string(),
+            WindowFrameUnits::Groups => "GROUPS".to_string(),
         }
     }
 }
 
-impl FromStr for SQLWindowFrameUnits {
+impl FromStr for WindowFrameUnits {
     type Err = ParserError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "ROWS" => Ok(SQLWindowFrameUnits::Rows),
-            "RANGE" => Ok(SQLWindowFrameUnits::Range),
-            "GROUPS" => Ok(SQLWindowFrameUnits::Groups),
+            "ROWS" => Ok(WindowFrameUnits::Rows),
+            "RANGE" => Ok(WindowFrameUnits::Range),
+            "GROUPS" => Ok(WindowFrameUnits::Groups),
             _ => Err(ParserError::ParserError(format!(
                 "Expected ROWS, RANGE, or GROUPS, found: {}",
                 s
@@ -319,7 +320,7 @@ impl FromStr for SQLWindowFrameUnits {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum SQLWindowFrameBound {
+pub enum WindowFrameBound {
     /// "CURRENT ROW"
     CurrentRow,
     /// "<N> PRECEDING" or "UNBOUNDED PRECEDING"
@@ -329,14 +330,14 @@ pub enum SQLWindowFrameBound {
     Following(Option<u64>),
 }
 
-impl ToString for SQLWindowFrameBound {
+impl ToString for WindowFrameBound {
     fn to_string(&self) -> String {
         match self {
-            SQLWindowFrameBound::CurrentRow => "CURRENT ROW".to_string(),
-            SQLWindowFrameBound::Preceding(None) => "UNBOUNDED PRECEDING".to_string(),
-            SQLWindowFrameBound::Following(None) => "UNBOUNDED FOLLOWING".to_string(),
-            SQLWindowFrameBound::Preceding(Some(n)) => format!("{} PRECEDING", n),
-            SQLWindowFrameBound::Following(Some(n)) => format!("{} FOLLOWING", n),
+            WindowFrameBound::CurrentRow => "CURRENT ROW".to_string(),
+            WindowFrameBound::Preceding(None) => "UNBOUNDED PRECEDING".to_string(),
+            WindowFrameBound::Following(None) => "UNBOUNDED FOLLOWING".to_string(),
+            WindowFrameBound::Preceding(Some(n)) => format!("{} PRECEDING", n),
+            WindowFrameBound::Following(Some(n)) => format!("{} FOLLOWING", n),
         }
     }
 }
@@ -344,109 +345,109 @@ impl ToString for SQLWindowFrameBound {
 /// A top-level statement (SELECT, INSERT, CREATE, etc.)
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum SQLStatement {
+pub enum Statement {
     /// SELECT
-    SQLQuery(Box<SQLQuery>),
+    Query(Box<Query>),
     /// INSERT
-    SQLInsert {
+    Insert {
         /// TABLE
-        table_name: SQLObjectName,
+        table_name: ObjectName,
         /// COLUMNS
-        columns: Vec<SQLIdent>,
+        columns: Vec<Ident>,
         /// A SQL query that specifies what to insert
-        source: Box<SQLQuery>,
+        source: Box<Query>,
     },
-    SQLCopy {
+    Copy {
         /// TABLE
-        table_name: SQLObjectName,
+        table_name: ObjectName,
         /// COLUMNS
-        columns: Vec<SQLIdent>,
+        columns: Vec<Ident>,
         /// VALUES a vector of values to be copied
         values: Vec<Option<String>>,
     },
     /// UPDATE
-    SQLUpdate {
+    Update {
         /// TABLE
-        table_name: SQLObjectName,
+        table_name: ObjectName,
         /// Column assignments
-        assignments: Vec<SQLAssignment>,
+        assignments: Vec<Assignment>,
         /// WHERE
-        selection: Option<ASTNode>,
+        selection: Option<Expr>,
     },
     /// DELETE
-    SQLDelete {
+    Delete {
         /// FROM
-        table_name: SQLObjectName,
+        table_name: ObjectName,
         /// WHERE
-        selection: Option<ASTNode>,
+        selection: Option<Expr>,
     },
     /// CREATE SOURCE
-    SQLCreateSource {
-        name: SQLObjectName,
+    CreateSource {
+        name: ObjectName,
         url: String,
         schema: SourceSchema,
-        with_options: Vec<SQLOption>,
+        with_options: Vec<SqlOption>,
     },
     /// CREATE SINK
-    SQLCreateSink {
-        name: SQLObjectName,
-        from: SQLObjectName,
+    CreateSink {
+        name: ObjectName,
+        from: ObjectName,
         url: String,
-        with_options: Vec<SQLOption>,
+        with_options: Vec<SqlOption>,
     },
     /// CREATE VIEW
-    SQLCreateView {
+    CreateView {
         /// View name
-        name: SQLObjectName,
-        columns: Vec<SQLIdent>,
-        query: Box<SQLQuery>,
+        name: ObjectName,
+        columns: Vec<Ident>,
+        query: Box<Query>,
         materialized: bool,
-        with_options: Vec<SQLOption>,
+        with_options: Vec<SqlOption>,
     },
     /// CREATE TABLE
-    SQLCreateTable {
+    CreateTable {
         /// Table name
-        name: SQLObjectName,
+        name: ObjectName,
         /// Optional schema
-        columns: Vec<SQLColumnDef>,
+        columns: Vec<ColumnDef>,
         constraints: Vec<TableConstraint>,
-        with_options: Vec<SQLOption>,
+        with_options: Vec<SqlOption>,
         external: bool,
         file_format: Option<FileFormat>,
         location: Option<String>,
     },
     /// ALTER TABLE
-    SQLAlterTable {
+    AlterTable {
         /// Table name
-        name: SQLObjectName,
+        name: ObjectName,
         operation: AlterTableOperation,
     },
     /// DROP TABLE
-    SQLDrop {
-        object_type: SQLObjectType,
+    Drop {
+        object_type: ObjectType,
         if_exists: bool,
-        names: Vec<SQLObjectName>,
+        names: Vec<ObjectName>,
         cascade: bool,
     },
     /// { BEGIN [ TRANSACTION | WORK ] | START TRANSACTION } ...
-    SQLStartTransaction { modes: Vec<TransactionMode> },
+    StartTransaction { modes: Vec<TransactionMode> },
     /// SET TRANSACTION ...
-    SQLSetTransaction { modes: Vec<TransactionMode> },
+    SetTransaction { modes: Vec<TransactionMode> },
     /// COMMIT [ TRANSACTION | WORK ] [ AND [ NO ] CHAIN ]
-    SQLCommit { chain: bool },
+    Commit { chain: bool },
     /// ROLLBACK [ TRANSACTION | WORK ] [ AND [ NO ] CHAIN ]
-    SQLRollback { chain: bool },
+    Rollback { chain: bool },
     /// PEEK
-    SQLPeek { name: SQLObjectName },
+    Peek { name: ObjectName },
     /// TAIL
-    SQLTail { name: SQLObjectName },
+    Tail { name: ObjectName },
 }
 
-impl ToString for SQLStatement {
+impl ToString for Statement {
     fn to_string(&self) -> String {
         match self {
-            SQLStatement::SQLQuery(s) => s.to_string(),
-            SQLStatement::SQLInsert {
+            Statement::Query(s) => s.to_string(),
+            Statement::Insert {
                 table_name,
                 columns,
                 source,
@@ -458,7 +459,7 @@ impl ToString for SQLStatement {
                 s += &source.to_string();
                 s
             }
-            SQLStatement::SQLCopy {
+            Statement::Copy {
                 table_name,
                 columns,
                 values,
@@ -481,7 +482,7 @@ impl ToString for SQLStatement {
                 s += "\n\\.";
                 s
             }
-            SQLStatement::SQLUpdate {
+            Statement::Update {
                 table_name,
                 assignments,
                 selection,
@@ -496,7 +497,7 @@ impl ToString for SQLStatement {
                 }
                 s
             }
-            SQLStatement::SQLDelete {
+            Statement::Delete {
                 table_name,
                 selection,
             } => {
@@ -506,7 +507,7 @@ impl ToString for SQLStatement {
                 }
                 s
             }
-            SQLStatement::SQLCreateSource {
+            Statement::CreateSource {
                 name,
                 url,
                 schema,
@@ -533,7 +534,7 @@ impl ToString for SQLStatement {
                     with_options
                 )
             }
-            SQLStatement::SQLCreateSink {
+            Statement::CreateSink {
                 name,
                 from,
                 url,
@@ -552,7 +553,7 @@ impl ToString for SQLStatement {
                     with_options
                 )
             }
-            SQLStatement::SQLCreateView {
+            Statement::CreateView {
                 name,
                 columns,
                 query,
@@ -579,7 +580,7 @@ impl ToString for SQLStatement {
                     query.to_string(),
                 )
             }
-            SQLStatement::SQLCreateTable {
+            Statement::CreateTable {
                 name,
                 columns,
                 constraints,
@@ -610,10 +611,10 @@ impl ToString for SQLStatement {
                 }
                 s
             }
-            SQLStatement::SQLAlterTable { name, operation } => {
+            Statement::AlterTable { name, operation } => {
                 format!("ALTER TABLE {} {}", name.to_string(), operation.to_string())
             }
-            SQLStatement::SQLDrop {
+            Statement::Drop {
                 object_type,
                 if_exists,
                 names,
@@ -625,7 +626,7 @@ impl ToString for SQLStatement {
                 comma_separated_string(names),
                 if *cascade { " CASCADE" } else { "" },
             ),
-            SQLStatement::SQLStartTransaction { modes } => format!(
+            Statement::StartTransaction { modes } => format!(
                 "START TRANSACTION{}",
                 if modes.is_empty() {
                     "".into()
@@ -633,7 +634,7 @@ impl ToString for SQLStatement {
                     format!(" {}", comma_separated_string(modes))
                 }
             ),
-            SQLStatement::SQLSetTransaction { modes } => format!(
+            Statement::SetTransaction { modes } => format!(
                 "SET TRANSACTION{}",
                 if modes.is_empty() {
                     "".into()
@@ -641,23 +642,23 @@ impl ToString for SQLStatement {
                     format!(" {}", comma_separated_string(modes))
                 }
             ),
-            SQLStatement::SQLCommit { chain } => {
+            Statement::Commit { chain } => {
                 format!("COMMIT{}", if *chain { " AND CHAIN" } else { "" },)
             }
-            SQLStatement::SQLRollback { chain } => {
+            Statement::Rollback { chain } => {
                 format!("ROLLBACK{}", if *chain { " AND CHAIN" } else { "" },)
             }
-            SQLStatement::SQLPeek { name } => format!("PEEK {}", name.to_string()),
-            SQLStatement::SQLTail { name } => format!("TAIL {}", name.to_string()),
+            Statement::Peek { name } => format!("PEEK {}", name.to_string()),
+            Statement::Tail { name } => format!("TAIL {}", name.to_string()),
         }
     }
 }
 
 /// A name of a table, view, custom type, etc., possibly multi-part, i.e. db.schema.obj
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct SQLObjectName(pub Vec<SQLIdent>);
+pub struct ObjectName(pub Vec<Ident>);
 
-impl ToString for SQLObjectName {
+impl ToString for ObjectName {
     fn to_string(&self) -> String {
         self.0.join(".")
     }
@@ -665,12 +666,12 @@ impl ToString for SQLObjectName {
 
 /// SQL assignment `foo = expr` as used in SQLUpdate
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct SQLAssignment {
-    pub id: SQLIdent,
-    pub value: ASTNode,
+pub struct Assignment {
+    pub id: Ident,
+    pub value: Expr,
 }
 
-impl ToString for SQLAssignment {
+impl ToString for Assignment {
     fn to_string(&self) -> String {
         format!("{} = {}", self.id, self.value.to_string())
     }
@@ -678,15 +679,15 @@ impl ToString for SQLAssignment {
 
 /// SQL function
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct SQLFunction {
-    pub name: SQLObjectName,
-    pub args: Vec<ASTNode>,
-    pub over: Option<SQLWindowSpec>,
+pub struct Function {
+    pub name: ObjectName,
+    pub args: Vec<Expr>,
+    pub over: Option<WindowSpec>,
     // aggregate functions may specify eg `COUNT(DISTINCT x)`
     pub distinct: bool,
 }
 
-impl ToString for SQLFunction {
+impl ToString for Function {
     fn to_string(&self) -> String {
         let mut s = format!(
             "{}({}{})",
@@ -738,7 +739,7 @@ impl ToString for FileFormat {
     }
 }
 
-use crate::sqlparser::ParserError;
+use crate::parser::ParserError;
 use std::str::FromStr;
 impl FromStr for FileFormat {
     type Err = ParserError;
@@ -762,31 +763,31 @@ impl FromStr for FileFormat {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum SQLObjectType {
+pub enum ObjectType {
     Table,
     View,
     Source,
     Sink,
 }
 
-impl SQLObjectType {
+impl ObjectType {
     fn to_string(&self) -> String {
         match self {
-            SQLObjectType::Table => "TABLE".into(),
-            SQLObjectType::View => "VIEW".into(),
-            SQLObjectType::Source => "SOURCE".into(),
-            SQLObjectType::Sink => "SINK".into(),
+            ObjectType::Table => "TABLE".into(),
+            ObjectType::View => "VIEW".into(),
+            ObjectType::Source => "SOURCE".into(),
+            ObjectType::Sink => "SINK".into(),
         }
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct SQLOption {
-    pub name: SQLIdent,
+pub struct SqlOption {
+    pub name: Ident,
     pub value: Value,
 }
 
-impl ToString for SQLOption {
+impl ToString for SqlOption {
     fn to_string(&self) -> String {
         format!("{} = {}", self.name.to_string(), self.value.to_string())
     }
