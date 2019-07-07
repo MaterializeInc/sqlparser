@@ -2136,7 +2136,7 @@ fn parse_create_source_raw_schema() {
                 },]
             );
         }
-        _ => assert!(false),
+        _ => panic!(),
     }
 }
 
@@ -2158,7 +2158,7 @@ fn parse_create_source_registry() {
             );
             assert_eq!(with_options, vec![]);
         }
-        _ => assert!(false),
+        _ => panic!(),
     }
 }
 
@@ -2183,7 +2183,7 @@ fn parse_create_sink() {
                 },]
             );
         }
-        _ => assert!(false),
+        _ => panic!(),
     }
 }
 
@@ -2286,7 +2286,7 @@ fn parse_peek() {
         Statement::Peek { name } => {
             assert_eq!("foo.bar", name.to_string());
         }
-        _ => assert!(false),
+        _ => panic!(),
     }
 }
 
@@ -2297,7 +2297,7 @@ fn parse_tail() {
         Statement::Tail { name } => {
             assert_eq!("foo.bar", name.to_string());
         }
-        _ => assert!(false),
+        _ => panic!(),
     }
 }
 

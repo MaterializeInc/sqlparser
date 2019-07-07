@@ -866,10 +866,11 @@ impl Parser {
         } else {
             SourceSchema::Raw(self.parse_literal_string()?)
         };
-        let mut with_options = vec![];
-        if self.parse_keyword("WITH") {
-            with_options = self.parse_with_options()?;
-        }
+        let with_options = if self.parse_keyword("WITH") {
+            self.parse_with_options()?
+        } else {
+            vec![]
+        };
         Ok(Statement::CreateSource {
             name,
             url,
@@ -884,10 +885,11 @@ impl Parser {
         let from = self.parse_object_name()?;
         self.expect_keyword("INTO")?;
         let url = self.parse_literal_string()?;
-        let mut with_options = vec![];
-        if self.parse_keyword("WITH") {
-            with_options = self.parse_with_options()?;
-        }
+        let with_options = if self.parse_keyword("WITH") {
+            self.parse_with_options()?
+        } else {
+            vec![]
+        };
         Ok(Statement::CreateSink {
             name,
             from,
