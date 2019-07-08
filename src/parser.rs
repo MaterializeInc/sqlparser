@@ -19,6 +19,7 @@ use super::dialect::keywords;
 use super::dialect::Dialect;
 use super::tokenizer::*;
 use std::error::Error;
+use std::fmt;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ParserError {
@@ -52,8 +53,8 @@ impl From<TokenizerError> for ParserError {
     }
 }
 
-impl std::fmt::Display for ParserError {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+impl fmt::Display for ParserError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
             "sql parser error: {}",
@@ -231,7 +232,7 @@ impl Parser {
                     }
                     _ => Ok(Expr::Identifier(w.as_ident())),
                 },
-            }, // End of Token::SQLWord
+            }, // End of Token::Word
             Token::Mult => Ok(Expr::Wildcard),
             tok @ Token::Minus | tok @ Token::Plus => {
                 let op = if tok == Token::Plus {
@@ -734,7 +735,7 @@ impl Parser {
         parser_err!(format!(
             "Expected {}, found: {}",
             expected,
-            found.map_or("EOF".to_string(), |t| t.to_string())
+            found.map_or_else(|| "EOF".to_string(), |t| format!("{}", t))
         ))
     }
 
@@ -1755,7 +1756,7 @@ impl Parser {
             //                   ^ ^ ^ ^
             //                   | | | |
             //                   | | | |
-            //                   | | | (4) belongs to a SQLSetExpr::Query inside the subquery
+            //                   | | | (4) belongs to a SetExpr::Query inside the subquery
             //                   | | (3) starts a derived table (subquery)
             //                   | (2) starts a nested join
             //                   (1) an additional set of parens around a nested join
@@ -1940,7 +1941,7 @@ impl Parser {
         Ok(projections)
     }
 
-    /// Parse a comma-delimited list of SQL ORDER BY expressions
+    /// Parse a comma-delimited list of ORDER BY expressions
     pub fn parse_order_by_expr_list(&mut self) -> Result<Vec<OrderByExpr>, ParserError> {
         let mut expr_list: Vec<OrderByExpr> = vec![];
         loop {
