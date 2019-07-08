@@ -12,6 +12,7 @@
 
 //! SQL Parser
 
+use bigdecimal::BigDecimal;
 use log::debug;
 
 use super::ast::*;
@@ -1236,9 +1237,9 @@ impl Parser {
                         return parser_err!(format!("No value parser for keyword {}", k.keyword));
                     }
                 },
-                Token::Number(ref n) if n.contains('.') => match n.parse::<f64>() {
-                    Ok(n) => Ok(Value::Double(n.into())),
-                    Err(e) => parser_err!(format!("Could not parse '{}' as f64: {}", n, e)),
+                Token::Number(ref n) if n.contains('.') => match n.parse::<BigDecimal>() {
+                    Ok(n) => Ok(Value::Decimal(n)),
+                    Err(e) => parser_err!(format!("Could not parse '{}' as decimal: {}", n, e)),
                 },
                 Token::Number(ref n) => match n.parse::<u64>() {
                     Ok(n) => Ok(Value::Long(n)),

@@ -1179,6 +1179,23 @@ fn parse_aggregate_with_group_by() {
 }
 
 #[test]
+fn parse_literal_decimal() {
+    // These numbers were explicitly chosen to not roundtrip if represented as
+    // f64s (i.e., as 64-bit binary floating point numbers).
+    let sql = "SELECT 0.300000000000000004, 9007199254740993.0";
+    let select = verified_only_select(sql);
+    assert_eq!(2, select.projection.len());
+    assert_eq!(
+        &Expr::Value(Value::Decimal("0.300000000000000004".parse().unwrap())),
+        expr_from_projection(&select.projection[0]),
+    );
+    assert_eq!(
+        &Expr::Value(Value::Decimal("9007199254740993.0".parse().unwrap())),
+        expr_from_projection(&select.projection[1]),
+    )
+}
+
+#[test]
 fn parse_literal_string() {
     let sql = "SELECT 'one', N'national string', X'deadBEEF'";
     let select = verified_only_select(sql);
