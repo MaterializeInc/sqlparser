@@ -1668,13 +1668,13 @@ impl Parser {
         if self.parse_keyword("COLUMNS") {
             self.parse_show_columns()
         } else {
-            self.parse_show_objects().ok_or(
+            self.parse_show_objects().ok_or_else(|| {
                 self.expected::<()>(
                     "One of {COLUMNS, TABLES, VIEWS, SOURCES, SINKS}",
                     self.peek_token(),
                 )
-                .unwrap_err(),
-            )
+                .unwrap_err()
+            })
         }
     }
 
@@ -1697,7 +1697,10 @@ impl Parser {
                 "VIEWS" => ObjectType::View,
                 "SINKS" => ObjectType::Sink,
                 "TABLES" => ObjectType::Table,
-                _ => unimplemented!(),
+                val => panic!(
+                    "`parse_one_of_keywords` returned an impossible value: {}",
+                    val
+                ),
             })?;
         Some(Statement::Show { object_type })
     }
