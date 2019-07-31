@@ -1460,6 +1460,28 @@ fn parse_searched_case_expr() {
 }
 
 #[test]
+fn parse_show_columns() {
+    assert_eq!(
+        verified_stmt("SHOW COLUMNS FROM mytable"),
+        Statement::ShowColumns {
+            table_name: ObjectName(vec!["mytable".to_string()])
+        }
+    );
+    assert_eq!(
+        verified_stmt("SHOW COLUMNS FROM mydb.mytable"),
+        Statement::ShowColumns {
+            table_name: ObjectName(vec!["mydb".to_string(), "mytable".to_string()])
+        }
+    );
+
+    // unhandled things are truly unhandled
+    match parse_sql_statements("SHOW COLUMNS FROM mytable FROM mydb") {
+        Err(_) => {}
+        Ok(val) => panic!("unexpected successful parse: {:?}", val),
+    }
+}
+
+#[test]
 fn parse_simple_case_expr() {
     // ANSI calls a CASE expression with an operand "<simple case>"
     let sql = "SELECT CASE foo WHEN 1 THEN 'Y' ELSE 'N' END";

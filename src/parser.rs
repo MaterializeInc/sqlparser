@@ -137,6 +137,7 @@ impl Parser {
                     "PEEK" => Ok(Statement::Peek {
                         name: self.parse_object_name()?,
                     }),
+                    "SHOW" => Ok(self.parse_show()?),
                     "TAIL" => Ok(Statement::Tail {
                         name: self.parse_object_name()?,
                     }),
@@ -1660,6 +1661,25 @@ impl Parser {
             selection,
             group_by,
             having,
+        })
+    }
+
+    pub fn parse_show(&mut self) -> Result<Statement, ParserError> {
+        if self.parse_keyword("COLUMNS") {
+            self.parse_show_columns()
+        } else {
+            self.expected("COLUMNS", self.peek_token())
+        }
+    }
+
+    fn parse_show_columns(&mut self) -> Result<Statement, ParserError> {
+        if !self.parse_keyword("FROM") {
+            return self.expected("FROM", self.peek_token());
+        }
+        let table_or_schema = self.parse_object_name()?;
+
+        Ok(Statement::ShowColumns {
+            table_name: table_or_schema,
         })
     }
 
