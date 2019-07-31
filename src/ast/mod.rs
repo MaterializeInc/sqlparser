@@ -450,6 +450,13 @@ pub enum Statement {
     Peek { name: ObjectName },
     /// TAIL
     Tail { name: ObjectName },
+    /// The mysql-ish `SHOW COLUMNS FROM`
+    ///
+    /// ```sql
+    /// SHOW COLUMNS FROM mydb.mytable;
+    /// ```
+    /// Limitations: doesn't support `LIKE`,  `WHERE` or `SHOW COLUMNS FROM mytable FROM mydb;`
+    ShowColumns { table_name: ObjectName },
 }
 
 impl fmt::Display for Statement {
@@ -655,6 +662,7 @@ impl fmt::Display for Statement {
                 write!(f, "ROLLBACK{}", if *chain { " AND CHAIN" } else { "" },)
             }
             Statement::Peek { name } => write!(f, "PEEK {}", name),
+            Statement::ShowColumns { table_name } => write!(f, "SHOW COLUMNS FROM {}", table_name),
             Statement::Tail { name } => write!(f, "TAIL {}", name),
         }
     }

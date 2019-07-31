@@ -465,6 +465,10 @@ pub trait Visit<'ast> {
         visit_peek(self, name)
     }
 
+    fn visit_show_columns(&mut self, name: &'ast ObjectName) {
+        visit_show_columns(self, name)
+    }
+
     fn visit_tail(&mut self, name: &'ast ObjectName) {
         visit_tail(self, name)
     }
@@ -542,6 +546,7 @@ pub fn visit_statement<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, statement
         Statement::Peek { name } => {
             visitor.visit_peek(name);
         }
+        Statement::ShowColumns { table_name } => visitor.visit_show_columns(table_name),
         Statement::Tail { name } => {
             visitor.visit_tail(name);
         }
@@ -1363,6 +1368,10 @@ pub fn visit_transaction_mode<'ast, V: Visit<'ast> + ?Sized>(
 }
 
 pub fn visit_peek<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, name: &'ast ObjectName) {
+    visitor.visit_object_name(name);
+}
+
+pub fn visit_show_columns<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, name: &'ast ObjectName) {
     visitor.visit_object_name(name);
 }
 
