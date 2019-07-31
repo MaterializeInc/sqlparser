@@ -457,6 +457,15 @@ pub enum Statement {
     /// ```
     /// Limitations: doesn't support `LIKE`,  `WHERE` or `SHOW COLUMNS FROM mytable FROM mydb;`
     ShowColumns { table_name: ObjectName },
+    /// SHOW <object>S
+    ///
+    /// ```sql
+    /// SHOW TABLES;
+    /// SHOW VIEWS;
+    /// SHOW SOURCES;
+    /// SHOW SINKS;
+    /// ```
+    Show { object_type: ObjectType },
 }
 
 impl fmt::Display for Statement {
@@ -662,6 +671,19 @@ impl fmt::Display for Statement {
                 write!(f, "ROLLBACK{}", if *chain { " AND CHAIN" } else { "" },)
             }
             Statement::Peek { name } => write!(f, "PEEK {}", name),
+            Statement::Show { object_type } => {
+                use ObjectType::*;
+                write!(
+                    f,
+                    "SHOW {}",
+                    match object_type {
+                        Table => "TABLES",
+                        View => "VIEWS",
+                        Source => "SOURCES",
+                        Sink => "SINKS",
+                    }
+                )
+            }
             Statement::ShowColumns { table_name } => write!(f, "SHOW COLUMNS FROM {}", table_name),
             Statement::Tail { name } => write!(f, "TAIL {}", name),
         }
@@ -781,7 +803,7 @@ impl FromStr for FileFormat {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Copy)]
 pub enum ObjectType {
     Table,
     View,

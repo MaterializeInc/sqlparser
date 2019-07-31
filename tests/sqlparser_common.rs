@@ -1482,6 +1482,21 @@ fn parse_show_columns() {
 }
 
 #[test]
+fn parse_show_objects() {
+    let trials = [
+        ("SOURCES", ObjectType::Source),
+        ("VIEWS", ObjectType::View),
+        ("TABLES", ObjectType::Table),
+        ("SINKS", ObjectType::Sink),
+    ];
+
+    for (s, ot) in &trials {
+        let sql = format!("SHOW {}", s);
+        assert_eq!(verified_stmt(&sql), Statement::Show { object_type: *ot })
+    }
+}
+
+#[test]
 fn parse_simple_case_expr() {
     // ANSI calls a CASE expression with an operand "<simple case>"
     let sql = "SELECT CASE foo WHEN 1 THEN 'Y' ELSE 'N' END";

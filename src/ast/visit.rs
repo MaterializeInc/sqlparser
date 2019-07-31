@@ -469,6 +469,8 @@ pub trait Visit<'ast> {
         visit_show_columns(self, name)
     }
 
+    fn visit_show(&mut self, _object_type: ObjectType) {}
+
     fn visit_tail(&mut self, name: &'ast ObjectName) {
         visit_tail(self, name)
     }
@@ -546,6 +548,7 @@ pub fn visit_statement<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, statement
         Statement::Peek { name } => {
             visitor.visit_peek(name);
         }
+        Statement::Show { object_type } => visitor.visit_show(*object_type),
         Statement::ShowColumns { table_name } => visitor.visit_show_columns(table_name),
         Statement::Tail { name } => {
             visitor.visit_tail(name);

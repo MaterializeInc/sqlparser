@@ -1668,7 +1668,13 @@ impl Parser {
         if self.parse_keyword("COLUMNS") {
             self.parse_show_columns()
         } else {
-            self.expected("COLUMNS", self.peek_token())
+            self.parse_show_objects().ok_or_else(|| {
+                self.expected::<()>(
+                    "One of {COLUMNS, TABLES, VIEWS, SOURCES, SINKS}",
+                    self.peek_token(),
+                )
+                .unwrap_err()
+            })
         }
     }
 
@@ -1681,6 +1687,22 @@ impl Parser {
         Ok(Statement::ShowColumns {
             table_name: table_or_schema,
         })
+    }
+
+    fn parse_show_objects(&mut self) -> Option<Statement> {
+        let object_type = self
+            .parse_one_of_keywords(&["SOURCES", "VIEWS", "SINKS", "TABLES"])
+            .map(|s| match s {
+                "SOURCES" => ObjectType::Source,
+                "VIEWS" => ObjectType::View,
+                "SINKS" => ObjectType::Sink,
+                "TABLES" => ObjectType::Table,
+                val => panic!(
+                    "`parse_one_of_keywords` returned an impossible value: {}",
+                    val
+                ),
+            })?;
+        Some(Statement::Show { object_type })
     }
 
     pub fn parse_table_and_joins(&mut self) -> Result<TableWithJoins, ParserError> {
