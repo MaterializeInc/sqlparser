@@ -673,13 +673,17 @@ impl fmt::Display for Statement {
             Statement::Peek { name } => write!(f, "PEEK {}", name),
             Statement::Show { object_type } => {
                 use ObjectType::*;
-                write!(f, "SHOW {}", match object_type {
-                    Table => "TABLES",
-                    View => "VIEWS",
-                    Source => "SOURCES",
-                    Sink => "SINKS",
-                })
-            },
+                write!(
+                    f,
+                    "SHOW {}",
+                    match object_type {
+                        Table => "TABLES",
+                        View => "VIEWS",
+                        Source => "SOURCES",
+                        Sink => "SINKS",
+                    }
+                )
+            }
             Statement::ShowColumns { table_name } => write!(f, "SHOW COLUMNS FROM {}", table_name),
             Statement::Tail { name } => write!(f, "TAIL {}", name),
         }

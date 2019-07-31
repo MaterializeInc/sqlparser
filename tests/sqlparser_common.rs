@@ -1492,10 +1492,7 @@ fn parse_show_objects() {
 
     for (s, ot) in &trials {
         let sql = format!("SHOW {}", s);
-        assert_eq!(
-            verified_stmt(&sql),
-            Statement::Show { object_type: *ot }
-        )
+        assert_eq!(verified_stmt(&sql), Statement::Show { object_type: *ot })
     }
 }
 
