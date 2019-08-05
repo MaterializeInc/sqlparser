@@ -816,6 +816,15 @@ impl Parser {
         }
     }
 
+    /// Bail out if the following tokens are not the excpected sequence of keywords,
+    /// or consume them if they are
+    pub fn expect_keywords(&mut self, expected: &[&'static str]) -> Result<(), ParserError> {
+        for kw in expected {
+            self.expect_keyword(kw)?;
+        }
+        Ok(())
+    }
+
     /// Consume the next token if it matches the expected token, otherwise return false
     #[must_use]
     pub fn consume_token(&mut self, expected: &Token) -> bool {
