@@ -878,10 +878,7 @@ impl Parser {
         } else {
             SourceSchema::Raw(self.parse_literal_string()?)
         };
-        let mut with_options = vec![];
-        if self.parse_keyword("WITH") {
-            with_options = self.parse_with_options()?;
-        }
+        let with_options = self.parse_with_options()?;
         Ok(Statement::CreateSource {
             name,
             url,
@@ -896,10 +893,7 @@ impl Parser {
         let from = self.parse_object_name()?;
         self.expect_keyword("INTO")?;
         let url = self.parse_literal_string()?;
-        let mut with_options = vec![];
-        if self.parse_keyword("WITH") {
-            with_options = self.parse_with_options()?;
-        }
+        let with_options = self.parse_with_options()?;
         Ok(Statement::CreateSink {
             name,
             from,
@@ -937,11 +931,7 @@ impl Parser {
         // ANSI SQL and Postgres support RECURSIVE here, but we don't support it either.
         let name = self.parse_object_name()?;
         let columns = self.parse_parenthesized_column_list(Optional)?;
-        let with_options = if self.parse_keyword("WITH") {
-            self.parse_with_options()?
-        } else {
-            vec![]
-        };
+        let with_options = self.parse_with_options()?;
         self.expect_keyword("AS")?;
         let query = Box::new(self.parse_query()?);
         // Optional `WITH [ CASCADED | LOCAL ] CHECK OPTION` is widely supported here.
@@ -992,11 +982,7 @@ impl Parser {
         // parse optional column list (schema)
         let (columns, constraints) = self.parse_columns()?;
 
-        let with_options = if self.parse_keyword("WITH") {
-            self.parse_with_options()?
-        } else {
-            vec![]
-        };
+        let with_options = self.parse_with_options()?;
 
         Ok(Statement::CreateTable {
             name: table_name,
@@ -1144,19 +1130,23 @@ impl Parser {
     }
 
     pub fn parse_with_options(&mut self) -> Result<Vec<SqlOption>, ParserError> {
-        self.expect_token(&Token::LParen)?;
-        let mut options = vec![];
-        loop {
-            let name = self.parse_identifier()?;
-            self.expect_token(&Token::Eq)?;
-            let value = self.parse_value()?;
-            options.push(SqlOption { name, value });
-            if !self.consume_token(&Token::Comma) {
-                break;
+        if self.parse_keyword("WITH") {
+            self.expect_token(&Token::LParen)?;
+            let mut options = vec![];
+            loop {
+                let name = self.parse_identifier()?;
+                self.expect_token(&Token::Eq)?;
+                let value = self.parse_value()?;
+                options.push(SqlOption { name, value });
+                if !self.consume_token(&Token::Comma) {
+                    break;
+                }
             }
+            self.expect_token(&Token::RParen)?;
+            Ok(options)
+        } else {
+            Ok(vec![])
         }
-        self.expect_token(&Token::RParen)?;
-        Ok(options)
     }
 
     pub fn parse_alter(&mut self) -> Result<Statement, ParserError> {
