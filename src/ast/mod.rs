@@ -397,6 +397,12 @@ pub enum Statement {
         schema: SourceSchema,
         with_options: Vec<SqlOption>,
     },
+    /// CREATE SOURCES
+    CreateSources {
+        url: String,
+        schema_registry: String,
+        with_options: Vec<SqlOption>,
+    },
     /// CREATE SINK
     CreateSink {
         name: ObjectName,
@@ -553,6 +559,22 @@ impl fmt::Display for Statement {
                         write!(f, "REGISTRY {}", Value::SingleQuotedString(url.clone()))?;
                     }
                 }
+                if !with_options.is_empty() {
+                    write!(f, " WITH ({})", display_comma_separated(with_options))?;
+                }
+                Ok(())
+            }
+            Statement::CreateSources {
+                url,
+                schema_registry,
+                with_options,
+            } => {
+                write!(
+                    f,
+                    "CREATE SOURCES FROM {} USING SCHEMA REGISTRY {}",
+                    Value::SingleQuotedString(url.clone()).to_string(),
+                    Value::SingleQuotedString(schema_registry.clone()).to_string(),
+                )?;
                 if !with_options.is_empty() {
                     write!(f, " WITH ({})", display_comma_separated(with_options))?;
                 }

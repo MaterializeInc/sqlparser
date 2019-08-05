@@ -816,6 +816,15 @@ impl Parser {
         }
     }
 
+    /// Bail out if the following tokens are not the excpected sequence of keywords,
+    /// or consume them if they are
+    pub fn expect_keywords(&mut self, expected: &[&'static str]) -> Result<(), ParserError> {
+        for kw in expected {
+            self.expect_keyword(kw)?;
+        }
+        Ok(())
+    }
+
     /// Consume the next token if it matches the expected token, otherwise return false
     #[must_use]
     pub fn consume_token(&mut self, expected: &Token) -> bool {
@@ -846,6 +855,8 @@ impl Parser {
             self.parse_create_view()
         } else if self.parse_keyword("SOURCE") {
             self.parse_create_source()
+        } else if self.parse_keyword("SOURCES") {
+            self.parse_create_sources()
         } else if self.parse_keyword("SINK") {
             self.parse_create_sink()
         } else if self.parse_keyword("EXTERNAL") {
@@ -869,14 +880,24 @@ impl Parser {
         } else {
             SourceSchema::Raw(self.parse_literal_string()?)
         };
-        let mut with_options = vec![];
-        if self.parse_keyword("WITH") {
-            with_options = self.parse_with_options()?;
-        }
+        let with_options = self.parse_with_options()?;
         Ok(Statement::CreateSource {
             name,
             url,
             schema,
+            with_options,
+        })
+    }
+
+    pub fn parse_create_sources(&mut self) -> Result<Statement, ParserError> {
+        self.expect_keyword("FROM")?;
+        let url = self.parse_literal_string()?;
+        self.expect_keywords(&["USING", "SCHEMA", "REGISTRY"])?;
+        let schema_registry = self.parse_literal_string()?;
+        let with_options = self.parse_with_options()?;
+        Ok(Statement::CreateSources {
+            url,
+            schema_registry,
             with_options,
         })
     }
@@ -887,10 +908,7 @@ impl Parser {
         let from = self.parse_object_name()?;
         self.expect_keyword("INTO")?;
         let url = self.parse_literal_string()?;
-        let mut with_options = vec![];
-        if self.parse_keyword("WITH") {
-            with_options = self.parse_with_options()?;
-        }
+        let with_options = self.parse_with_options()?;
         Ok(Statement::CreateSink {
             name,
             from,
@@ -928,11 +946,7 @@ impl Parser {
         // ANSI SQL and Postgres support RECURSIVE here, but we don't support it either.
         let name = self.parse_object_name()?;
         let columns = self.parse_parenthesized_column_list(Optional)?;
-        let with_options = if self.parse_keyword("WITH") {
-            self.parse_with_options()?
-        } else {
-            vec![]
-        };
+        let with_options = self.parse_with_options()?;
         self.expect_keyword("AS")?;
         let query = Box::new(self.parse_query()?);
         // Optional `WITH [ CASCADED | LOCAL ] CHECK OPTION` is widely supported here.
@@ -983,11 +997,7 @@ impl Parser {
         // parse optional column list (schema)
         let (columns, constraints) = self.parse_columns()?;
 
-        let with_options = if self.parse_keyword("WITH") {
-            self.parse_with_options()?
-        } else {
-            vec![]
-        };
+        let with_options = self.parse_with_options()?;
 
         Ok(Statement::CreateTable {
             name: table_name,
@@ -1135,19 +1145,23 @@ impl Parser {
     }
 
     pub fn parse_with_options(&mut self) -> Result<Vec<SqlOption>, ParserError> {
-        self.expect_token(&Token::LParen)?;
-        let mut options = vec![];
-        loop {
-            let name = self.parse_identifier()?;
-            self.expect_token(&Token::Eq)?;
-            let value = self.parse_value()?;
-            options.push(SqlOption { name, value });
-            if !self.consume_token(&Token::Comma) {
-                break;
+        if self.parse_keyword("WITH") {
+            self.expect_token(&Token::LParen)?;
+            let mut options = vec![];
+            loop {
+                let name = self.parse_identifier()?;
+                self.expect_token(&Token::Eq)?;
+                let value = self.parse_value()?;
+                options.push(SqlOption { name, value });
+                if !self.consume_token(&Token::Comma) {
+                    break;
+                }
             }
+            self.expect_token(&Token::RParen)?;
+            Ok(options)
+        } else {
+            Ok(vec![])
         }
-        self.expect_token(&Token::RParen)?;
-        Ok(options)
     }
 
     pub fn parse_alter(&mut self) -> Result<Statement, ParserError> {

@@ -2217,6 +2217,23 @@ fn parse_create_source_registry() {
 }
 
 #[test]
+fn parse_create_sources() {
+    let sql = "CREATE SOURCES FROM 'kafka://whatever' USING SCHEMA REGISTRY 'http://foo.bar:8081'";
+    match verified_stmt(sql) {
+        Statement::CreateSources {
+            url,
+            schema_registry,
+            with_options,
+        } => {
+            assert_eq!("kafka://whatever", url);
+            assert_eq!("http://foo.bar:8081", schema_registry);
+            assert!(with_options.is_empty());
+        }
+        _ => assert!(false)
+    }
+}
+
+#[test]
 fn parse_create_sink() {
     let sql = "CREATE SINK foo FROM bar INTO 'baz' WITH (name = 'val')";
     match verified_stmt(sql) {

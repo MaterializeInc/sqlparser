@@ -316,6 +316,15 @@ pub trait Visit<'ast> {
         visit_create_source(self, name, url, schema, with_options)
     }
 
+    fn visit_create_sources(
+        &mut self,
+        url: &'ast String,
+        schema_registry: &'ast String,
+        with_options: &'ast Vec<SqlOption>,
+    ) {
+        visit_create_sources(self, url, schema_registry, with_options)
+    }
+
     fn visit_source_schema(&mut self, source_schema: &'ast SourceSchema) {
         visit_source_schema(self, source_schema)
     }
@@ -504,6 +513,11 @@ pub fn visit_statement<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, statement
             schema,
             with_options,
         } => visitor.visit_create_source(name, url, schema, with_options),
+        Statement::CreateSources {
+            url,
+            schema_registry,
+            with_options,
+        } => visitor.visit_create_sources(url, schema_registry, with_options),
         Statement::CreateSink {
             name,
             from,
@@ -1098,6 +1112,19 @@ pub fn visit_create_source<'ast, V: Visit<'ast> + ?Sized>(
     visitor.visit_object_name(name);
     visitor.visit_literal_string(url);
     visitor.visit_source_schema(schema);
+    for option in with_options {
+        visitor.visit_option(option);
+    }
+}
+
+pub fn visit_create_sources<'ast, V: Visit<'ast> + ?Sized>(
+    visitor: &mut V,
+    url: &'ast String,
+    schema_registry: &'ast String,
+    with_options: &'ast Vec<SqlOption>,
+) {
+    visitor.visit_literal_string(url);
+    visitor.visit_literal_string(schema_registry);
     for option in with_options {
         visitor.visit_option(option);
     }
