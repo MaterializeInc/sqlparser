@@ -855,6 +855,8 @@ impl Parser {
             self.parse_create_view()
         } else if self.parse_keyword("SOURCE") {
             self.parse_create_source()
+        } else if self.parse_keyword("SOURCES") {
+            self.parse_create_sources()
         } else if self.parse_keyword("SINK") {
             self.parse_create_sink()
         } else if self.parse_keyword("EXTERNAL") {
@@ -883,6 +885,19 @@ impl Parser {
             name,
             url,
             schema,
+            with_options,
+        })
+    }
+
+    pub fn parse_create_sources(&mut self) -> Result<Statement, ParserError> {
+        self.expect_keyword("FROM")?;
+        let url = self.parse_literal_string()?;
+        self.expect_keywords(&["USING", "SCHEMA", "REGISTRY"])?;
+        let schema_registry = self.parse_literal_string()?;
+        let with_options = self.parse_with_options()?;
+        Ok(Statement::CreateSources {
+            url,
+            schema_registry,
             with_options,
         })
     }
