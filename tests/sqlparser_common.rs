@@ -2354,8 +2354,18 @@ fn parse_drop_source() {
 fn parse_peek() {
     let sql = "PEEK foo.bar";
     match verified_stmt(sql) {
-        Statement::Peek { name } => {
+        Statement::Peek { name, immediate } => {
             assert_eq!("foo.bar", name.to_string());
+            assert!(!immediate);
+        }
+        _ => assert!(false),
+    }
+
+    let sql = "PEEK IMMEDIATE foo.bar";
+    match verified_stmt(sql) {
+        Statement::Peek { name, immediate } => {
+            assert_eq!("foo.bar", name.to_string());
+            assert!(immediate);
         }
         _ => assert!(false),
     }

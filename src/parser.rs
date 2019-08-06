@@ -135,6 +135,7 @@ impl Parser {
                     "COMMIT" => Ok(self.parse_commit()?),
                     "ROLLBACK" => Ok(self.parse_rollback()?),
                     "PEEK" => Ok(Statement::Peek {
+                        immediate: self.parse_keyword("IMMEDIATE"),
                         name: self.parse_object_name()?,
                     }),
                     "SHOW" => Ok(self.parse_show()?),

@@ -452,8 +452,11 @@ pub enum Statement {
     Commit { chain: bool },
     /// ROLLBACK [ TRANSACTION | WORK ] [ AND [ NO ] CHAIN ]
     Rollback { chain: bool },
-    /// PEEK
-    Peek { name: ObjectName },
+    /// PEEK [ IMMEDIATE ]
+    Peek {
+        name: ObjectName,
+        immediate: bool,
+    },
     /// TAIL
     Tail { name: ObjectName },
     /// The mysql-ish `SHOW COLUMNS FROM`
@@ -692,7 +695,13 @@ impl fmt::Display for Statement {
             Statement::Rollback { chain } => {
                 write!(f, "ROLLBACK{}", if *chain { " AND CHAIN" } else { "" },)
             }
-            Statement::Peek { name } => write!(f, "PEEK {}", name),
+            Statement::Peek { name, immediate } => {
+                f.write_str("PEEK ")?;
+                if *immediate {
+                    f.write_str("IMMEDIATE ")?;
+                }
+                write!(f, "{}", name)
+            },
             Statement::Show { object_type } => {
                 use ObjectType::*;
                 write!(
