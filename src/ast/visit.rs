@@ -470,8 +470,8 @@ pub trait Visit<'ast> {
 
     fn visit_rollback(&mut self, _chain: bool) {}
 
-    fn visit_peek(&mut self, name: &'ast ObjectName) {
-        visit_peek(self, name)
+    fn visit_peek(&mut self, name: &'ast ObjectName, immediate: bool) {
+        visit_peek(self, name, immediate)
     }
 
     fn visit_show_columns(&mut self, name: &'ast ObjectName) {
@@ -559,8 +559,8 @@ pub fn visit_statement<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, statement
         Statement::SetTransaction { modes } => visitor.visit_set_transaction(modes),
         Statement::Commit { chain } => visitor.visit_commit(*chain),
         Statement::Rollback { chain } => visitor.visit_rollback(*chain),
-        Statement::Peek { name } => {
-            visitor.visit_peek(name);
+        Statement::Peek { name, immediate } => {
+            visitor.visit_peek(name, *immediate);
         }
         Statement::Show { object_type } => visitor.visit_show(*object_type),
         Statement::ShowColumns { table_name } => visitor.visit_show_columns(table_name),
@@ -1397,7 +1397,7 @@ pub fn visit_transaction_mode<'ast, V: Visit<'ast> + ?Sized>(
     }
 }
 
-pub fn visit_peek<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, name: &'ast ObjectName) {
+pub fn visit_peek<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, name: &'ast ObjectName, _immediate: bool) {
     visitor.visit_object_name(name);
 }
 

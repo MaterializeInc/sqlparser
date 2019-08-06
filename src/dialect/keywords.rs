@@ -197,6 +197,7 @@ define_keywords!(
     HOUR,
     IDENTITY,
     IF,
+    IMMEDIATE,
     IN,
     INDICATOR,
     INNER,
