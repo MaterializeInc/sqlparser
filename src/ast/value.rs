@@ -35,17 +35,45 @@ pub enum Value {
     /// `TIMESTAMP '...'` literals
     Timestamp(String),
     /// INTERVAL literals, roughly in the following format:
-    /// `INTERVAL '<value>' <leading_field> [ (<leading_precision>) ]
-    /// [ TO <last_field> [ (<fractional_seconds_precision>) ] ]`,
+    ///
+    /// ```
+    /// INTERVAL '<value>' <leading_field> [ (<leading_precision>) ]
+    ///     [ TO <last_field> [ (<fractional_seconds_precision>) ] ]
+    /// ```
     /// e.g. `INTERVAL '123:45.67' MINUTE(3) TO SECOND(2)`.
     ///
     /// The parser does not validate the `<value>`, nor does it ensure
     /// that the `<leading_field>` units >= the units in `<last_field>`,
     /// so the user will have to reject intervals like `HOUR TO YEAR`.
     Interval {
+        /// The raw [value] that was present in `INTERVAL '[value]'`
         value: String,
+        /// The unit of the first field in the interval. `INTERVAL 'T' MINUTE`
+        /// means `T` is in minutes
         leading_field: DateTimeField,
+        /// How many digits the leading field is allowed to occupy.
+        ///
+        /// The interval `INTERVAL '1234' MINUTE(3)` is **illegal**, but `INTERVAL
+        /// '123' MINUTE(3)` is fine.
+        ///
+        /// This parser does not do any validation that fields fit.
         leading_precision: Option<u64>,
+        /// How much precision to keep track of
+        ///
+        /// If this is ommitted, then you are supposed to ignore all of the
+        /// non-lead fields. If it is less precise than the final field, you
+        /// are supposed to ignore the final field.
+        ///
+        /// For the following specifications:
+        ///
+        /// * `INTERVAL '1:1:1' HOURS TO SECONDS` the `last_field` gets
+        ///   `Some(DateTimeField::Second)` and interpreters should generate an
+        ///   interval equivalent to `3661` seconds.
+        /// * In `INTERVAL '1:1:1' HOURS` the `last_field` gets `None` and
+        ///   interpreters should generate an interval equivalent to `3600`
+        ///   seconds.
+        /// * In `INTERVAL '1:1:1' HOURS TO MINUTES` the interval should be
+        ///   equivalent to `3660` seconds.
         last_field: Option<DateTimeField>,
         /// The seconds precision can be specified in SQL source as
         /// `INTERVAL '__' SECOND(_, x)` (in which case the `leading_field`
