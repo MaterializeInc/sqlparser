@@ -515,14 +515,14 @@ impl Parser {
         let (value, _warnings) =
             Self::parse_interval_string(&raw_value, &leading_field, &last_field)?;
 
-        Ok(Expr::Value(Value::Interval {
+        Ok(Expr::Value(Value::Interval(IntervalValue {
             value: raw_value,
             parsed: value,
             leading_field,
             leading_precision,
             last_field,
             fractional_seconds_precision: fsec_precision,
-        }))
+        })))
     }
 
     /// Parse an operator following an expression

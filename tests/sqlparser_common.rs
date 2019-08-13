@@ -1256,7 +1256,7 @@ fn parse_literal_interval() {
     let sql = "SELECT INTERVAL '1-1' YEAR TO MONTH";
     let select = verified_only_select(sql);
     assert_eq!(
-        &Expr::Value(Value::Interval {
+        &Expr::Value(Value::Interval(IntervalValue {
             value: "1-1".into(),
             parsed: ParsedDateTime {
                 year: Some(1),
@@ -1267,14 +1267,14 @@ fn parse_literal_interval() {
             leading_precision: None,
             last_field: Some(DateTimeField::Month),
             fractional_seconds_precision: None,
-        }),
+        })),
         expr_from_projection(only(&select.projection)),
     );
 
     let sql = "SELECT INTERVAL '01:01.01' MINUTE (5) TO SECOND (5)";
     let select = verified_only_select(sql);
     assert_eq!(
-        &Expr::Value(Value::Interval {
+        &Expr::Value(Value::Interval(IntervalValue {
             value: "01:01.01".into(),
             parsed: ParsedDateTime {
                 minute: Some(1),
@@ -1286,14 +1286,14 @@ fn parse_literal_interval() {
             leading_precision: Some(5),
             last_field: Some(DateTimeField::Second),
             fractional_seconds_precision: Some(5),
-        }),
+        })),
         expr_from_projection(only(&select.projection)),
     );
 
     let sql = "SELECT INTERVAL '1' SECOND (5, 4)";
     let select = verified_only_select(sql);
     assert_eq!(
-        &Expr::Value(Value::Interval {
+        &Expr::Value(Value::Interval(IntervalValue {
             value: "1".into(),
             parsed: ParsedDateTime {
                 second: Some(1),
@@ -1303,14 +1303,14 @@ fn parse_literal_interval() {
             leading_precision: Some(5),
             last_field: None,
             fractional_seconds_precision: Some(4),
-        }),
+        })),
         expr_from_projection(only(&select.projection)),
     );
 
     let sql = "SELECT INTERVAL '10' HOUR";
     let select = verified_only_select(sql);
     assert_eq!(
-        &Expr::Value(Value::Interval {
+        &Expr::Value(Value::Interval(IntervalValue {
             value: "10".into(),
             parsed: ParsedDateTime {
                 hour: Some(10),
@@ -1320,14 +1320,14 @@ fn parse_literal_interval() {
             leading_precision: None,
             last_field: None,
             fractional_seconds_precision: None,
-        }),
+        })),
         expr_from_projection(only(&select.projection)),
     );
 
     let sql = "SELECT INTERVAL '10' HOUR (1)";
     let select = verified_only_select(sql);
     assert_eq!(
-        &Expr::Value(Value::Interval {
+        &Expr::Value(Value::Interval(IntervalValue {
             value: "10".into(),
             parsed: ParsedDateTime {
                 hour: Some(10),
@@ -1337,7 +1337,7 @@ fn parse_literal_interval() {
             leading_precision: Some(1),
             last_field: None,
             fractional_seconds_precision: None,
-        }),
+        })),
         expr_from_projection(only(&select.projection)),
     );
 
