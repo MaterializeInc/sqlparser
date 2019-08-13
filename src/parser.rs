@@ -294,16 +294,22 @@ impl Parser {
             self.expect_token(&Token::LParen)?;
             let partition_by = if self.parse_keywords(vec!["PARTITION", "BY"]) {
                 // a list of possibly-qualified column names
-                self.parse_expr_list()?
+                self.parse_comma_separated(Parser::parse_expr)?
             } else {
                 vec![]
             };
             let order_by = if self.parse_keywords(vec!["ORDER", "BY"]) {
-                self.parse_order_by_expr_list()?
+                self.parse_comma_separated(Parser::parse_order_by_expr)?
             } else {
                 vec![]
             };
-            let window_frame = self.parse_window_frame()?;
+            let window_frame = if !self.consume_token(&Token::RParen) {
+                let window_frame = self.parse_window_frame()?;
+                self.expect_token(&Token::RParen)?;
+                Some(window_frame)
+            } else {
+                None
+            };
 
             Some(WindowSpec {
                 partition_by,
@@ -322,38 +328,27 @@ impl Parser {
         }))
     }
 
-    pub fn parse_window_frame(&mut self) -> Result<Option<WindowFrame>, ParserError> {
-        let window_frame = match self.peek_token() {
-            Some(Token::Word(w)) => {
-                let units = w.keyword.parse::<WindowFrameUnits>()?;
-                self.next_token();
-                if self.parse_keyword("BETWEEN") {
-                    let start_bound = self.parse_window_frame_bound()?;
-                    self.expect_keyword("AND")?;
-                    let end_bound = Some(self.parse_window_frame_bound()?);
-                    Some(WindowFrame {
-                        units,
-                        start_bound,
-                        end_bound,
-                    })
-                } else {
-                    let start_bound = self.parse_window_frame_bound()?;
-                    let end_bound = None;
-                    Some(WindowFrame {
-                        units,
-                        start_bound,
-                        end_bound,
-                    })
-                }
-            }
-            Some(Token::RParen) => None,
-            unexpected => return self.expected("'ROWS', 'RANGE', 'GROUPS', or ')'", unexpected),
+    pub fn parse_window_frame(&mut self) -> Result<WindowFrame, ParserError> {
+        let units = match self.next_token() {
+            Some(Token::Word(w)) => w.keyword.parse::<WindowFrameUnits>()?,
+            unexpected => return self.expected("ROWS, RANGE, GROUPS", unexpected),
         };
-        self.expect_token(&Token::RParen)?;
-        Ok(window_frame)
+        let (start_bound, end_bound) = if self.parse_keyword("BETWEEN") {
+            let start_bound = self.parse_window_frame_bound()?;
+            self.expect_keyword("AND")?;
+            let end_bound = Some(self.parse_window_frame_bound()?);
+            (start_bound, end_bound)
+        } else {
+            (self.parse_window_frame_bound()?, None)
+        };
+        Ok(WindowFrame {
+            units,
+            start_bound,
+            end_bound,
+        })
     }
 
-    /// "CURRENT ROW" | ( (<positive number> | "UNBOUNDED") ("PRECEDING" | FOLLOWING) )
+    /// Parse `CURRENT ROW` or `{ <positive number> | UNBOUNDED } { PRECEDING | FOLLOWING }`
     pub fn parse_window_frame_bound(&mut self) -> Result<WindowFrameBound, ParserError> {
         if self.parse_keywords(vec!["CURRENT", "ROW"]) {
             Ok(WindowFrameBound::CurrentRow)
@@ -361,8 +356,7 @@ impl Parser {
             let rows = if self.parse_keyword("UNBOUNDED") {
                 None
             } else {
-                let rows = self.parse_literal_uint()?;
-                Some(rows)
+                Some(self.parse_literal_uint()?)
             };
             if self.parse_keyword("PRECEDING") {
                 Ok(WindowFrameBound::Preceding(rows))
@@ -606,7 +600,7 @@ impl Parser {
         } else {
             Expr::InList {
                 expr: Box::new(expr),
-                list: self.parse_expr_list()?,
+                list: self.parse_comma_separated(Parser::parse_expr)?,
                 negated,
             }
         };
@@ -847,6 +841,21 @@ impl Parser {
         }
     }
 
+    /// Parse a comma-separated list of 1+ items accepted by `F`
+    pub fn parse_comma_separated<T, F>(&mut self, mut f: F) -> Result<Vec<T>, ParserError>
+    where
+        F: FnMut(&mut Parser) -> Result<T, ParserError>,
+    {
+        let mut values = vec![];
+        loop {
+            values.push(f(self)?);
+            if !self.consume_token(&Token::Comma) {
+                break;
+            }
+        }
+        Ok(values)
+    }
+
     /// Parse a SQL CREATE statement
     pub fn parse_create(&mut self) -> Result<Statement, ParserError> {
         if self.parse_keyword("TABLE") {
@@ -972,14 +981,10 @@ impl Parser {
         } else {
             return self.expected("TABLE or VIEW after DROP", self.peek_token());
         };
+        // Many dialects support the non standard `IF EXISTS` clause and allow
+        // specifying multiple objects to delete in a single statement
         let if_exists = self.parse_keywords(vec!["IF", "EXISTS"]);
-        let mut names = vec![];
-        loop {
-            names.push(self.parse_object_name()?);
-            if !self.consume_token(&Token::Comma) {
-                break;
-            }
-        }
+        let names = self.parse_comma_separated(Parser::parse_object_name)?;
         let cascade = self.parse_keyword("CASCADE");
         let restrict = self.parse_keyword("RESTRICT");
         if cascade && restrict {
@@ -997,7 +1002,6 @@ impl Parser {
         let table_name = self.parse_object_name()?;
         // parse optional column list (schema)
         let (columns, constraints) = self.parse_columns()?;
-
         let with_options = self.parse_with_options()?;
 
         Ok(Statement::CreateTable {
@@ -1148,21 +1152,19 @@ impl Parser {
     pub fn parse_with_options(&mut self) -> Result<Vec<SqlOption>, ParserError> {
         if self.parse_keyword("WITH") {
             self.expect_token(&Token::LParen)?;
-            let mut options = vec![];
-            loop {
-                let name = self.parse_identifier()?;
-                self.expect_token(&Token::Eq)?;
-                let value = self.parse_value()?;
-                options.push(SqlOption { name, value });
-                if !self.consume_token(&Token::Comma) {
-                    break;
-                }
-            }
+            let options = self.parse_comma_separated(Parser::parse_sql_option)?;
             self.expect_token(&Token::RParen)?;
             Ok(options)
         } else {
             Ok(vec![])
         }
+    }
+
+    pub fn parse_sql_option(&mut self) -> Result<SqlOption, ParserError> {
+        let name = self.parse_identifier()?;
+        self.expect_token(&Token::Eq)?;
+        let value = self.parse_value()?;
+        Ok(SqlOption { name, value })
     }
 
     pub fn parse_alter(&mut self) -> Result<Statement, ParserError> {
@@ -1408,22 +1410,17 @@ impl Parser {
         }
     }
 
-    /// Parse one or more identifiers with the specified separator between them
-    pub fn parse_list_of_ids(&mut self, separator: &Token) -> Result<Vec<Ident>, ParserError> {
-        let mut idents = vec![];
-        loop {
-            idents.push(self.parse_identifier()?);
-            if !self.consume_token(separator) {
-                break;
-            }
-        }
-        Ok(idents)
-    }
-
     /// Parse a possibly qualified, possibly quoted identifier, e.g.
     /// `foo` or `myschema."table"`
     pub fn parse_object_name(&mut self) -> Result<ObjectName, ParserError> {
-        Ok(ObjectName(self.parse_list_of_ids(&Token::Period)?))
+        let mut idents = vec![];
+        loop {
+            idents.push(self.parse_identifier()?);
+            if !self.consume_token(&Token::Period) {
+                break;
+            }
+        }
+        Ok(ObjectName(idents))
     }
 
     /// Parse a simple one-word identifier (possibly quoted, possibly a keyword)
@@ -1440,7 +1437,7 @@ impl Parser {
         optional: IsOptional,
     ) -> Result<Vec<Ident>, ParserError> {
         if self.consume_token(&Token::LParen) {
-            let cols = self.parse_list_of_ids(&Token::Comma)?;
+            let cols = self.parse_comma_separated(Parser::parse_identifier)?;
             self.expect_token(&Token::RParen)?;
             Ok(cols)
         } else if optional == Optional {
@@ -1499,7 +1496,7 @@ impl Parser {
     pub fn parse_query(&mut self) -> Result<Query, ParserError> {
         let ctes = if self.parse_keyword("WITH") {
             // TODO: optional RECURSIVE
-            self.parse_cte_list()?
+            self.parse_comma_separated(Parser::parse_cte)?
         } else {
             vec![]
         };
@@ -1507,7 +1504,7 @@ impl Parser {
         let body = self.parse_query_body(0)?;
 
         let order_by = if self.parse_keywords(vec!["ORDER", "BY"]) {
-            self.parse_order_by_expr_list()?
+            self.parse_comma_separated(Parser::parse_order_by_expr)?
         } else {
             vec![]
         };
@@ -1540,27 +1537,17 @@ impl Parser {
         })
     }
 
-    /// Parse one or more (comma-separated) `alias AS (subquery)` CTEs,
-    /// assuming the initial `WITH` was already consumed.
-    fn parse_cte_list(&mut self) -> Result<Vec<Cte>, ParserError> {
-        let mut cte = vec![];
-        loop {
-            let alias = TableAlias {
-                name: self.parse_identifier()?,
-                columns: self.parse_parenthesized_column_list(Optional)?,
-            };
-            self.expect_keyword("AS")?;
-            self.expect_token(&Token::LParen)?;
-            cte.push(Cte {
-                alias,
-                query: self.parse_query()?,
-            });
-            self.expect_token(&Token::RParen)?;
-            if !self.consume_token(&Token::Comma) {
-                break;
-            }
-        }
-        Ok(cte)
+    /// Parse a CTE (`alias [( col1, col2, ... )] AS (subquery)`)
+    fn parse_cte(&mut self) -> Result<Cte, ParserError> {
+        let alias = TableAlias {
+            name: self.parse_identifier()?,
+            columns: self.parse_parenthesized_column_list(Optional)?,
+        };
+        self.expect_keyword("AS")?;
+        self.expect_token(&Token::LParen)?;
+        let query = self.parse_query()?;
+        self.expect_token(&Token::RParen)?;
+        Ok(Cte { alias, query })
     }
 
     /// Parse a "query body", which is an expression with roughly the
@@ -1634,22 +1621,18 @@ impl Parser {
         if all && distinct {
             return parser_err!("Cannot specify both ALL and DISTINCT in SELECT");
         }
-        let projection = self.parse_select_list()?;
+        let projection = self.parse_comma_separated(Parser::parse_select_item)?;
 
         // Note that for keywords to be properly handled here, they need to be
         // added to `RESERVED_FOR_COLUMN_ALIAS` / `RESERVED_FOR_TABLE_ALIAS`,
         // otherwise they may be parsed as an alias as part of the `projection`
         // or `from`.
 
-        let mut from = vec![];
-        if self.parse_keyword("FROM") {
-            loop {
-                from.push(self.parse_table_and_joins()?);
-                if !self.consume_token(&Token::Comma) {
-                    break;
-                }
-            }
-        }
+        let from = if self.parse_keyword("FROM") {
+            self.parse_comma_separated(Parser::parse_table_and_joins)?
+        } else {
+            vec![]
+        };
 
         let selection = if self.parse_keyword("WHERE") {
             Some(self.parse_expr()?)
@@ -1658,7 +1641,7 @@ impl Parser {
         };
 
         let group_by = if self.parse_keywords(vec!["GROUP", "BY"]) {
-            self.parse_expr_list()?
+            self.parse_comma_separated(Parser::parse_expr)?
         } else {
             vec![]
         };
@@ -1865,7 +1848,7 @@ impl Parser {
             let mut with_hints = vec![];
             if self.parse_keyword("WITH") {
                 if self.consume_token(&Token::LParen) {
-                    with_hints = self.parse_expr_list()?;
+                    with_hints = self.parse_comma_separated(Parser::parse_expr)?;
                     self.expect_token(&Token::RParen)?;
                 } else {
                     // rewind, as WITH may belong to the next statement's CTE
@@ -1928,16 +1911,7 @@ impl Parser {
     pub fn parse_update(&mut self) -> Result<Statement, ParserError> {
         let table_name = self.parse_object_name()?;
         self.expect_keyword("SET")?;
-        let mut assignments = vec![];
-        loop {
-            let id = self.parse_identifier()?;
-            self.expect_token(&Token::Eq)?;
-            let value = self.parse_expr()?;
-            assignments.push(Assignment { id, value });
-            if !self.consume_token(&Token::Comma) {
-                break;
-            }
-        }
+        let assignments = self.parse_comma_separated(Parser::parse_assignment)?;
         let selection = if self.parse_keyword("WHERE") {
             Some(self.parse_expr()?)
         } else {
@@ -1950,75 +1924,53 @@ impl Parser {
         })
     }
 
-    /// Parse a comma-delimited list of SQL expressions
-    pub fn parse_expr_list(&mut self) -> Result<Vec<Expr>, ParserError> {
-        let mut expr_list: Vec<Expr> = vec![];
-        loop {
-            expr_list.push(self.parse_expr()?);
-            if !self.consume_token(&Token::Comma) {
-                break;
-            }
-        }
-        Ok(expr_list)
+    /// Parse a `var = expr` assignment, used in an UPDATE statement
+    pub fn parse_assignment(&mut self) -> Result<Assignment, ParserError> {
+        let id = self.parse_identifier()?;
+        self.expect_token(&Token::Eq)?;
+        let value = self.parse_expr()?;
+        Ok(Assignment { id, value })
     }
 
     pub fn parse_optional_args(&mut self) -> Result<Vec<Expr>, ParserError> {
         if self.consume_token(&Token::RParen) {
             Ok(vec![])
         } else {
-            let args = self.parse_expr_list()?;
+            let args = self.parse_comma_separated(Parser::parse_expr)?;
             self.expect_token(&Token::RParen)?;
             Ok(args)
         }
     }
 
     /// Parse a comma-delimited list of projections after SELECT
-    pub fn parse_select_list(&mut self) -> Result<Vec<SelectItem>, ParserError> {
-        let mut projections: Vec<SelectItem> = vec![];
-        loop {
-            let expr = self.parse_expr()?;
-            if let Expr::Wildcard = expr {
-                projections.push(SelectItem::Wildcard);
-            } else if let Expr::QualifiedWildcard(prefix) = expr {
-                projections.push(SelectItem::QualifiedWildcard(ObjectName(prefix)));
+    pub fn parse_select_item(&mut self) -> Result<SelectItem, ParserError> {
+        let expr = self.parse_expr()?;
+        if let Expr::Wildcard = expr {
+            Ok(SelectItem::Wildcard)
+        } else if let Expr::QualifiedWildcard(prefix) = expr {
+            Ok(SelectItem::QualifiedWildcard(ObjectName(prefix)))
+        } else {
+            // `expr` is a regular SQL expression and can be followed by an alias
+            if let Some(alias) = self.parse_optional_alias(keywords::RESERVED_FOR_COLUMN_ALIAS)? {
+                Ok(SelectItem::ExprWithAlias { expr, alias })
             } else {
-                // `expr` is a regular SQL expression and can be followed by an alias
-                if let Some(alias) =
-                    self.parse_optional_alias(keywords::RESERVED_FOR_COLUMN_ALIAS)?
-                {
-                    projections.push(SelectItem::ExprWithAlias { expr, alias });
-                } else {
-                    projections.push(SelectItem::UnnamedExpr(expr));
-                }
-            }
-
-            if !self.consume_token(&Token::Comma) {
-                break;
+                Ok(SelectItem::UnnamedExpr(expr))
             }
         }
-        Ok(projections)
     }
 
-    /// Parse a comma-delimited list of ORDER BY expressions
-    pub fn parse_order_by_expr_list(&mut self) -> Result<Vec<OrderByExpr>, ParserError> {
-        let mut expr_list: Vec<OrderByExpr> = vec![];
-        loop {
-            let expr = self.parse_expr()?;
+    /// Parse an expression, optionally followed by ASC or DESC (used in ORDER BY)
+    pub fn parse_order_by_expr(&mut self) -> Result<OrderByExpr, ParserError> {
+        let expr = self.parse_expr()?;
 
-            let asc = if self.parse_keyword("ASC") {
-                Some(true)
-            } else if self.parse_keyword("DESC") {
-                Some(false)
-            } else {
-                None
-            };
-
-            expr_list.push(OrderByExpr { expr, asc });
-            if !self.consume_token(&Token::Comma) {
-                break;
-            }
-        }
-        Ok(expr_list)
+        let asc = if self.parse_keyword("ASC") {
+            Some(true)
+        } else if self.parse_keyword("DESC") {
+            Some(false)
+        } else {
+            None
+        };
+        Ok(OrderByExpr { expr, asc })
     }
 
     /// Parse a LIMIT clause
@@ -2066,15 +2018,12 @@ impl Parser {
     }
 
     pub fn parse_values(&mut self) -> Result<Values, ParserError> {
-        let mut values = vec![];
-        loop {
-            self.expect_token(&Token::LParen)?;
-            values.push(self.parse_expr_list()?);
-            self.expect_token(&Token::RParen)?;
-            if !self.consume_token(&Token::Comma) {
-                break;
-            }
-        }
+        let values = self.parse_comma_separated(|parser| {
+            parser.expect_token(&Token::LParen)?;
+            let exprs = parser.parse_comma_separated(Parser::parse_expr)?;
+            parser.expect_token(&Token::RParen)?;
+            Ok(exprs)
+        })?;
         Ok(Values(values))
     }
 

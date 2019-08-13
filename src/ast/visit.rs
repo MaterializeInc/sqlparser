@@ -1397,7 +1397,11 @@ pub fn visit_transaction_mode<'ast, V: Visit<'ast> + ?Sized>(
     }
 }
 
-pub fn visit_peek<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, name: &'ast ObjectName, _immediate: bool) {
+pub fn visit_peek<'ast, V: Visit<'ast> + ?Sized>(
+    visitor: &mut V,
+    name: &'ast ObjectName,
+    _immediate: bool,
+) {
     visitor.visit_object_name(name);
 }
 

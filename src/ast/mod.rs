@@ -72,6 +72,16 @@ where
 /// Identifier name, in the originally quoted form (e.g. `"id"`)
 pub type Ident = String;
 
+/// A name of a table, view, custom type, etc., possibly multi-part, i.e. db.schema.obj
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ObjectName(pub Vec<Ident>);
+
+impl fmt::Display for ObjectName {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", display_separated(&self.0, "."))
+    }
+}
+
 /// An SQL expression of any type.
 ///
 /// The parser does not distinguish between expressions of different types
@@ -166,12 +176,9 @@ pub enum Expr {
 impl fmt::Display for Expr {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Expr::Identifier(s) => write!(f, "{}", s),
+            Expr::Identifier(s) => f.write_str(s),
             Expr::Wildcard => f.write_str("*"),
-            Expr::QualifiedWildcard(q) => {
-                write!(f, "{}", display_separated(q, "."))?;
-                f.write_str(".*")
-            }
+            Expr::QualifiedWildcard(q) => write!(f, "{}.*", display_separated(q, ".")),
             Expr::CompoundIdentifier(s) => write!(f, "{}", display_separated(s, ".")),
             Expr::IsNull(ast) => write!(f, "{} IS NULL", ast),
             Expr::IsNotNull(ast) => write!(f, "{} IS NOT NULL", ast),
@@ -286,11 +293,16 @@ impl fmt::Display for WindowSpec {
 
 /// Specifies the data processed by a window function, e.g.
 /// `RANGE UNBOUNDED PRECEDING` or `ROWS BETWEEN 5 PRECEDING AND CURRENT ROW`.
+///
+/// Note: The parser does not validate the specified bounds; the caller should
+/// reject invalid bounds like `ROWS UNBOUNDED FOLLOWING` before execution.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct WindowFrame {
     pub units: WindowFrameUnits,
     pub start_bound: WindowFrameBound,
-    /// The right bound of the `BETWEEN .. AND` clause.
+    /// The right bound of the `BETWEEN .. AND` clause. The end bound of `None`
+    /// indicates the shorthand form (e.g. `ROWS 1 PRECEDING`), which must
+    /// behave the same as `end_bound = WindowFrameBound::CurrentRow`.
     pub end_bound: Option<WindowFrameBound>,
     // TBD: EXCLUDE
 }
@@ -328,14 +340,14 @@ impl FromStr for WindowFrameUnits {
     }
 }
 
+/// Specifies [WindowFrame]'s `start_bound` and `end_bound`
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum WindowFrameBound {
     /// `CURRENT ROW`
     CurrentRow,
     /// `<N> PRECEDING` or `UNBOUNDED PRECEDING`
     Preceding(Option<u64>),
-    /// `<N> FOLLOWING` or `UNBOUNDED FOLLOWING`. This can only appear in
-    /// [WindowFrame::end_bound].
+    /// `<N> FOLLOWING` or `UNBOUNDED FOLLOWING`.
     Following(Option<u64>),
 }
 
@@ -437,11 +449,16 @@ pub enum Statement {
         name: ObjectName,
         operation: AlterTableOperation,
     },
-    /// DROP TABLE
+    /// DROP
     Drop {
+        /// The type of the object to drop: TABLE, VIEW, etc.
         object_type: ObjectType,
+        /// An optional `IF EXISTS` clause. (Non-standard.)
         if_exists: bool,
+        /// One or more objects to drop. (ANSI SQL requires exactly one.)
         names: Vec<ObjectName>,
+        /// Whether `CASCADE` was specified. This will be `false` when
+        /// `RESTRICT` or no drop behavior at all was specified.
         cascade: bool,
     },
     /// { BEGIN [ TRANSACTION | WORK ] | START TRANSACTION } ...
@@ -453,10 +470,7 @@ pub enum Statement {
     /// ROLLBACK [ TRANSACTION | WORK ] [ AND [ NO ] CHAIN ]
     Rollback { chain: bool },
     /// PEEK [ IMMEDIATE ]
-    Peek {
-        name: ObjectName,
-        immediate: bool,
-    },
+    Peek { name: ObjectName, immediate: bool },
     /// TAIL
     Tail { name: ObjectName },
     /// The mysql-ish `SHOW COLUMNS FROM`
@@ -701,7 +715,7 @@ impl fmt::Display for Statement {
                     f.write_str("IMMEDIATE ")?;
                 }
                 write!(f, "{}", name)
-            },
+            }
             Statement::Show { object_type } => {
                 use ObjectType::*;
                 write!(
@@ -718,16 +732,6 @@ impl fmt::Display for Statement {
             Statement::ShowColumns { table_name } => write!(f, "SHOW COLUMNS FROM {}", table_name),
             Statement::Tail { name } => write!(f, "TAIL {}", name),
         }
-    }
-}
-
-/// A name of a table, view, custom type, etc., possibly multi-part, i.e. db.schema.obj
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct ObjectName(pub Vec<Ident>);
-
-impl fmt::Display for ObjectName {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", display_separated(&self.0, "."))
     }
 }
 
@@ -795,19 +799,15 @@ pub enum FileFormat {
 impl fmt::Display for FileFormat {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use self::FileFormat::*;
-        write!(
-            f,
-            "{}",
-            match self {
-                TEXTFILE => "TEXTFILE",
-                SEQUENCEFILE => "SEQUENCEFILE",
-                ORC => "ORC",
-                PARQUET => "PARQUET",
-                AVRO => "AVRO",
-                RCFILE => "RCFILE",
-                JSONFILE => "TEXTFILE",
-            }
-        )
+        f.write_str(match self {
+            TEXTFILE => "TEXTFILE",
+            SEQUENCEFILE => "SEQUENCEFILE",
+            ORC => "ORC",
+            PARQUET => "PARQUET",
+            AVRO => "AVRO",
+            RCFILE => "RCFILE",
+            JSONFILE => "TEXTFILE",
+        })
     }
 }
 
@@ -844,16 +844,12 @@ pub enum ObjectType {
 
 impl fmt::Display for ObjectType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                ObjectType::Table => "TABLE",
-                ObjectType::View => "VIEW",
-                ObjectType::Source => "SOURCE",
-                ObjectType::Sink => "SINK",
-            }
-        )
+        f.write_str(match self {
+            ObjectType::Table => "TABLE",
+            ObjectType::View => "VIEW",
+            ObjectType::Source => "SOURCE",
+            ObjectType::Sink => "SINK",
+        })
     }
 }
 
@@ -879,7 +875,7 @@ impl fmt::Display for TransactionMode {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use TransactionMode::*;
         match self {
-            AccessMode(access_mode) => write!(f, "{}", access_mode.to_string()),
+            AccessMode(access_mode) => write!(f, "{}", access_mode),
             IsolationLevel(iso_level) => write!(f, "ISOLATION LEVEL {}", iso_level),
         }
     }
@@ -894,14 +890,10 @@ pub enum TransactionAccessMode {
 impl fmt::Display for TransactionAccessMode {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use TransactionAccessMode::*;
-        write!(
-            f,
-            "{}",
-            match self {
-                ReadOnly => "READ ONLY",
-                ReadWrite => "READ WRITE",
-            }
-        )
+        f.write_str(match self {
+            ReadOnly => "READ ONLY",
+            ReadWrite => "READ WRITE",
+        })
     }
 }
 
@@ -916,15 +908,11 @@ pub enum TransactionIsolationLevel {
 impl fmt::Display for TransactionIsolationLevel {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use TransactionIsolationLevel::*;
-        write!(
-            f,
-            "{}",
-            match self {
-                ReadUncommitted => "READ UNCOMMITTED",
-                ReadCommitted => "READ COMMITTED",
-                RepeatableRead => "REPEATABLE READ",
-                Serializable => "SERIALIZABLE",
-            }
-        )
+        f.write_str(match self {
+            ReadUncommitted => "READ UNCOMMITTED",
+            ReadCommitted => "READ COMMITTED",
+            RepeatableRead => "REPEATABLE READ",
+            Serializable => "SERIALIZABLE",
+        })
     }
 }

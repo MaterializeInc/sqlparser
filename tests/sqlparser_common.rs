@@ -2229,7 +2229,7 @@ fn parse_create_sources() {
             assert_eq!("http://foo.bar:8081", schema_registry);
             assert!(with_options.is_empty());
         }
-        _ => assert!(false)
+        _ => assert!(false),
     }
 }
 
