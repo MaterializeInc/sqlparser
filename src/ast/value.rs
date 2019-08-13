@@ -36,7 +36,7 @@ pub enum Value {
     Timestamp(String),
     /// INTERVAL literals, roughly in the following format:
     ///
-    /// ```ignore
+    /// ```text
     /// INTERVAL '<value>' <leading_field> [ (<leading_precision>) ]
     ///     [ TO <last_field> [ (<fractional_seconds_precision>) ] ]
     /// ```
@@ -46,8 +46,10 @@ pub enum Value {
     /// that the `<leading_field>` units >= the units in `<last_field>`,
     /// so the user will have to reject intervals like `HOUR TO YEAR`.
     Interval {
-        /// The raw [value] that was present in `INTERVAL '[value]'`
+        /// The raw `[value]` that was present in `INTERVAL '[value]'`
         value: String,
+        /// the fully parsed date time
+        parsed: ParsedDateTime,
         /// The unit of the first field in the interval. `INTERVAL 'T' MINUTE`
         /// means `T` is in minutes
         leading_field: DateTimeField,
@@ -98,6 +100,7 @@ impl fmt::Display for Value {
             Value::Time(v) => write!(f, "TIME '{}'", escape_single_quote_string(v)),
             Value::Timestamp(v) => write!(f, "TIMESTAMP '{}'", escape_single_quote_string(v)),
             Value::Interval {
+                parsed: _,
                 value,
                 leading_field: DateTimeField::Second,
                 leading_precision: Some(leading_precision),
@@ -116,6 +119,7 @@ impl fmt::Display for Value {
                 )
             }
             Value::Interval {
+                parsed: _,
                 value,
                 leading_field,
                 leading_precision,
@@ -145,6 +149,33 @@ impl fmt::Display for Value {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ParsedDateTime {
+    pub is_positive: bool,
+    pub year: Option<u64>,
+    pub month: Option<u64>,
+    pub day: Option<u64>,
+    pub hour: Option<u64>,
+    pub minute: Option<u64>,
+    pub second: Option<u64>,
+    pub nano: Option<u32>,
+}
+
+impl Default for ParsedDateTime {
+    fn default() -> ParsedDateTime {
+        ParsedDateTime {
+            is_positive: true,
+            year: None,
+            month: None,
+            day: None,
+            hour: None,
+            minute: None,
+            second: None,
+            nano: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialOrd, Ord, PartialEq, Eq, Hash)]
 pub enum DateTimeField {
     Year,
     Month,
@@ -152,6 +183,45 @@ pub enum DateTimeField {
     Hour,
     Minute,
     Second,
+}
+
+impl IntoIterator for DateTimeField {
+    type Item = DateTimeField;
+    type IntoIter = DateTimeFieldIterator;
+    fn into_iter(self) -> DateTimeFieldIterator {
+        DateTimeFieldIterator(Some(self))
+    }
+}
+
+/// An iterator over DateTimeFields
+///
+/// Always starts with the value smaller than the current one.
+///
+/// ```
+/// use sqlparser::ast::DateTimeField::*;
+/// let mut itr = Hour.into_iter();
+/// assert_eq!(itr.next(), Some(Minute));
+/// assert_eq!(itr.next(), Some(Second));
+/// assert_eq!(itr.next(), None);
+/// ```
+pub struct DateTimeFieldIterator(Option<DateTimeField>);
+
+/// Go through fields in descending significance order
+impl Iterator for DateTimeFieldIterator {
+    type Item = DateTimeField;
+    fn next(&mut self) -> Option<Self::Item> {
+        use DateTimeField::*;
+        self.0 = match self.0 {
+            Some(Year) => Some(Month),
+            Some(Month) => Some(Day),
+            Some(Day) => Some(Hour),
+            Some(Hour) => Some(Minute),
+            Some(Minute) => Some(Second),
+            Some(Second) => None,
+            None => None,
+        };
+        self.0.clone()
+    }
 }
 
 impl fmt::Display for DateTimeField {

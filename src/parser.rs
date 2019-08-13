@@ -22,17 +22,22 @@ use super::tokenizer::*;
 use std::error::Error;
 use std::fmt;
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum ParserError {
-    TokenizerError(String),
-    ParserError(String),
-}
-
 // Use `Parser::expected` instead, if possible
 macro_rules! parser_err {
     ($MSG:expr) => {
         Err(ParserError::ParserError($MSG.to_string()))
     };
+    ($($arg:tt)*) => {
+        Err(ParserError::ParserError(format!($($arg)*)))
+    };
+}
+
+mod datetime;
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ParserError {
+    TokenizerError(String),
+    ParserError(String),
 }
 
 #[derive(PartialEq)]
@@ -466,14 +471,14 @@ impl Parser {
     ///
     /// Note that we do not currently attempt to parse the quoted value.
     pub fn parse_literal_interval(&mut self) -> Result<Expr, ParserError> {
-        // The SQL standard allows an optional sign before the value string, but
+        // The SQL standard allows an optional sign before the raw_value string, but
         // it is not clear if any implementations support that syntax, so we
         // don't currently try to parse it. (The sign can instead be included
-        // inside the value string.)
+        // inside the raw_value string.)
 
         // The first token in an interval is a string literal which specifies
         // the duration of the interval.
-        let value = self.parse_literal_string()?;
+        let raw_value = self.parse_literal_string()?;
 
         // Following the string literal is a qualifier which indicates the units
         // of the duration specified in the string literal.
@@ -507,8 +512,12 @@ impl Parser {
                 }
             };
 
+        let (value, _warnings) =
+            Self::parse_interval_string(&raw_value, &leading_field, &last_field)?;
+
         Ok(Expr::Value(Value::Interval {
-            value,
+            value: raw_value,
+            parsed: value,
             leading_field,
             leading_precision,
             last_field,
@@ -586,6 +595,39 @@ impl Parser {
             // Can only happen if `get_next_precedence` got out of sync with this function
             panic!("No infix parser for token {:?}", tok)
         }
+    }
+
+    /// parse
+    ///
+    /// ```text
+    /// <unquoted interval string> ::=
+    ///   [ <sign> ] { <year-month literal> | <day-time literal> }
+    /// <year-month literal> ::=
+    ///     <years value> [ <minus sign> <months value> ]
+    ///   | <months value>
+    /// <day-time literal> ::=
+    ///     <day-time interval>
+    ///   | <time interval>
+    /// <day-time interval> ::=
+    ///   <days value> [ <space> <hours value> [ <colon> <minutes value>
+    ///       [ <colon> <seconds value> ] ] ]
+    /// <time interval> ::=
+    ///     <hours value> [ <colon> <minutes value> [ <colon> <seconds value> ] ]
+    ///   | <minutes value> [ <colon> <seconds value> ]
+    ///   | <seconds value>
+    /// ```
+    pub fn parse_interval_string(
+        value: &str,
+        leading_field: &DateTimeField,
+        trailing_field: &Option<DateTimeField>,
+    ) -> Result<(ParsedDateTime, Vec<String>), ParserError> {
+        if value.is_empty() {
+            return Err(ParserError::ParserError(
+                "Interval date string is empty!".to_string(),
+            ));
+        }
+        let toks = datetime::tokenize_interval(value)?;
+        datetime::build_parsed_datetime(&toks, &leading_field, trailing_field)
     }
 
     /// Parses the parens following the `[ NOT ] IN` operator
