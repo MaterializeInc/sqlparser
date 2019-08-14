@@ -445,6 +445,39 @@ pub trait Visit<'ast> {
         visit_alter_drop_constraint(self, name)
     }
 
+    fn visit_set_variable(
+        &mut self,
+        local: bool,
+        variable: &'ast Ident,
+        value: &'ast SetVariableValue,
+    ) {
+        visit_set_variable(self, local, variable, value)
+    }
+
+    fn visit_set_variable_value(&mut self, value: &'ast SetVariableValue) {
+        visit_set_variable_value(self, value)
+    }
+
+    fn visit_show_variable(&mut self, variable: &'ast Ident) {
+        visit_show_variable(self, variable)
+    }
+
+    fn visit_show_objects(&mut self, _object_type: ObjectType) {}
+
+    fn visit_show_columns(
+        &mut self,
+        extended: bool,
+        full: bool,
+        table_name: &'ast ObjectName,
+        filter: Option<&'ast ShowStatementFilter>,
+    ) {
+        visit_show_columns(self, extended, full, table_name, filter)
+    }
+
+    fn visit_show_statement_filter(&mut self, filter: &'ast ShowStatementFilter) {
+        visit_show_statement_filter(self, filter)
+    }
+
     fn visit_start_transaction(&mut self, modes: &'ast [TransactionMode]) {
         visit_start_transaction(self, modes)
     }
@@ -473,12 +506,6 @@ pub trait Visit<'ast> {
     fn visit_peek(&mut self, name: &'ast ObjectName, immediate: bool) {
         visit_peek(self, name, immediate)
     }
-
-    fn visit_show_columns(&mut self, name: &'ast ObjectName) {
-        visit_show_columns(self, name)
-    }
-
-    fn visit_show(&mut self, _object_type: ObjectType) {}
 
     fn visit_tail(&mut self, name: &'ast ObjectName) {
         visit_tail(self, name)
@@ -555,6 +582,19 @@ pub fn visit_statement<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, statement
             location,
         ),
         Statement::AlterTable { name, operation } => visitor.visit_alter_table(name, operation),
+        Statement::SetVariable {
+            local,
+            variable,
+            value,
+        } => visitor.visit_set_variable(*local, variable, value),
+        Statement::ShowVariable { variable } => visitor.visit_show_variable(variable),
+        Statement::ShowObjects { object_type } => visitor.visit_show_objects(*object_type),
+        Statement::ShowColumns {
+            extended,
+            full,
+            table_name,
+            filter,
+        } => visitor.visit_show_columns(*extended, *full, table_name, filter.as_ref()),
         Statement::StartTransaction { modes } => visitor.visit_start_transaction(modes),
         Statement::SetTransaction { modes } => visitor.visit_set_transaction(modes),
         Statement::Commit { chain } => visitor.visit_commit(*chain),
@@ -562,8 +602,6 @@ pub fn visit_statement<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, statement
         Statement::Peek { name, immediate } => {
             visitor.visit_peek(name, *immediate);
         }
-        Statement::Show { object_type } => visitor.visit_show(*object_type),
-        Statement::ShowColumns { table_name } => visitor.visit_show_columns(table_name),
         Statement::Tail { name } => {
             visitor.visit_tail(name);
         }
@@ -1365,6 +1403,53 @@ pub fn visit_alter_drop_constraint<'ast, V: Visit<'ast> + ?Sized>(
     visitor.visit_ident(name);
 }
 
+pub fn visit_set_variable<'ast, V: Visit<'ast> + ?Sized>(
+    visitor: &mut V,
+    _local: bool,
+    variable: &'ast Ident,
+    value: &'ast SetVariableValue,
+) {
+    visitor.visit_ident(variable);
+    visitor.visit_set_variable_value(value);
+}
+
+pub fn visit_set_variable_value<'ast, V: Visit<'ast> + ?Sized>(
+    visitor: &mut V,
+    value: &'ast SetVariableValue,
+) {
+    match value {
+        SetVariableValue::Ident(ident) => visitor.visit_ident(ident),
+        SetVariableValue::Literal(value) => visitor.visit_value(value),
+    }
+}
+
+pub fn visit_show_variable<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, variable: &'ast Ident) {
+    visitor.visit_ident(variable);
+}
+
+pub fn visit_show_columns<'ast, V: Visit<'ast> + ?Sized>(
+    visitor: &mut V,
+    _extended: bool,
+    _full: bool,
+    table_name: &'ast ObjectName,
+    filter: Option<&'ast ShowStatementFilter>,
+) {
+    visitor.visit_object_name(table_name);
+    if let Some(filter) = filter {
+        visitor.visit_show_statement_filter(filter);
+    }
+}
+
+pub fn visit_show_statement_filter<'ast, V: Visit<'ast> + ?Sized>(
+    visitor: &mut V,
+    filter: &'ast ShowStatementFilter,
+) {
+    match filter {
+        ShowStatementFilter::Like(pattern) => visitor.visit_literal_string(pattern),
+        ShowStatementFilter::Where(expr) => visitor.visit_expr(expr),
+    }
+}
+
 pub fn visit_start_transaction<'ast, V: Visit<'ast> + ?Sized>(
     visitor: &mut V,
     modes: &'ast [TransactionMode],
@@ -1402,10 +1487,6 @@ pub fn visit_peek<'ast, V: Visit<'ast> + ?Sized>(
     name: &'ast ObjectName,
     _immediate: bool,
 ) {
-    visitor.visit_object_name(name);
-}
-
-pub fn visit_show_columns<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, name: &'ast ObjectName) {
     visitor.visit_object_name(name);
 }
 

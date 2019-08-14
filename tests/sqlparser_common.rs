@@ -1460,28 +1460,6 @@ fn parse_searched_case_expr() {
 }
 
 #[test]
-fn parse_show_columns() {
-    assert_eq!(
-        verified_stmt("SHOW COLUMNS FROM mytable"),
-        Statement::ShowColumns {
-            table_name: ObjectName(vec!["mytable".to_string()])
-        }
-    );
-    assert_eq!(
-        verified_stmt("SHOW COLUMNS FROM mydb.mytable"),
-        Statement::ShowColumns {
-            table_name: ObjectName(vec!["mydb".to_string(), "mytable".to_string()])
-        }
-    );
-
-    // unhandled things are truly unhandled
-    match parse_sql_statements("SHOW COLUMNS FROM mytable FROM mydb") {
-        Err(_) => {}
-        Ok(val) => panic!("unexpected successful parse: {:?}", val),
-    }
-}
-
-#[test]
 fn parse_show_objects() {
     let trials = [
         ("SOURCES", ObjectType::Source),
@@ -1492,7 +1470,10 @@ fn parse_show_objects() {
 
     for (s, ot) in &trials {
         let sql = format!("SHOW {}", s);
-        assert_eq!(verified_stmt(&sql), Statement::Show { object_type: *ot })
+        assert_eq!(
+            verified_stmt(&sql),
+            Statement::ShowObjects { object_type: *ot }
+        )
     }
 }
 

@@ -126,8 +126,9 @@ impl Parser {
                     "UPDATE" => Ok(self.parse_update()?),
                     "ALTER" => Ok(self.parse_alter()?),
                     "COPY" => Ok(self.parse_copy()?),
+                    "SET" => Ok(self.parse_set()?),
+                    "SHOW" => Ok(self.parse_show()?),
                     "START" => Ok(self.parse_start_transaction()?),
-                    "SET" => Ok(self.parse_set_transaction()?),
                     // `BEGIN` is a nonstandard but common alias for the
                     // standard `START TRANSACTION` statement. It is supported
                     // by at least PostgreSQL and MySQL.
@@ -138,7 +139,6 @@ impl Parser {
                         immediate: self.parse_keyword("IMMEDIATE"),
                         name: self.parse_object_name()?,
                     }),
-                    "SHOW" => Ok(self.parse_show()?),
                     "TAIL" => Ok(Statement::Tail {
                         name: self.parse_object_name()?,
                     }),
@@ -772,7 +772,11 @@ impl Parser {
     #[must_use]
     pub fn parse_one_of_keywords(&mut self, keywords: &[&'static str]) -> Option<&'static str> {
         for keyword in keywords {
-            assert!(keywords::ALL_KEYWORDS.contains(keyword));
+            assert!(
+                keywords::ALL_KEYWORDS.contains(keyword),
+                "{} is not contained in keyword list",
+                keyword
+            );
         }
         match self.peek_token() {
             Some(Token::Word(ref k)) => keywords
@@ -811,8 +815,8 @@ impl Parser {
         }
     }
 
-    /// Bail out if the following tokens are not the excpected sequence of keywords,
-    /// or consume them if they are
+    /// Bail out if the following tokens are not the expected sequence of
+    /// keywords, or consume them if they are.
     pub fn expect_keywords(&mut self, expected: &[&'static str]) -> Result<(), ParserError> {
         for kw in expected {
             self.expect_keyword(kw)?;
@@ -931,8 +935,7 @@ impl Parser {
         self.expect_keyword("TABLE")?;
         let table_name = self.parse_object_name()?;
         let (columns, constraints) = self.parse_columns()?;
-        self.expect_keyword("STORED")?;
-        self.expect_keyword("AS")?;
+        self.expect_keywords(&["STORED", "AS"])?;
         let file_format = self.parse_identifier()?.parse::<FileFormat>()?;
 
         self.expect_keyword("LOCATION")?;
@@ -1190,8 +1193,7 @@ impl Parser {
     pub fn parse_copy(&mut self) -> Result<Statement, ParserError> {
         let table_name = self.parse_object_name()?;
         let columns = self.parse_parenthesized_column_list(Optional)?;
-        self.expect_keyword("FROM")?;
-        self.expect_keyword("STDIN")?;
+        self.expect_keywords(&["FROM", "STDIN"])?;
         self.expect_token(&Token::SemiColon)?;
         let values = self.parse_tsv()?;
         Ok(Statement::Copy {
@@ -1319,16 +1321,14 @@ impl Parser {
                 "TIMESTAMP" => {
                     // TBD: we throw away "with/without timezone" information
                     if self.parse_keyword("WITH") || self.parse_keyword("WITHOUT") {
-                        self.expect_keyword("TIME")?;
-                        self.expect_keyword("ZONE")?;
+                        self.expect_keywords(&["TIME", "ZONE"])?;
                     }
                     Ok(DataType::Timestamp)
                 }
                 "TIME" => {
                     // TBD: we throw away "with/without timezone" information
                     if self.parse_keyword("WITH") || self.parse_keyword("WITHOUT") {
-                        self.expect_keyword("TIME")?;
-                        self.expect_keyword("ZONE")?;
+                        self.expect_keywords(&["TIME", "ZONE"])?;
                     }
                     Ok(DataType::Time)
                 }
@@ -1662,45 +1662,89 @@ impl Parser {
         })
     }
 
-    pub fn parse_show(&mut self) -> Result<Statement, ParserError> {
-        if self.parse_keyword("COLUMNS") {
-            self.parse_show_columns()
+    pub fn parse_set(&mut self) -> Result<Statement, ParserError> {
+        let modifier = self.parse_one_of_keywords(&["SESSION", "LOCAL"]);
+        let variable = self.parse_identifier()?;
+        if self.consume_token(&Token::Eq) || self.parse_keyword("TO") {
+            let token = self.peek_token();
+            let value = match (self.parse_value(), token) {
+                (Ok(value), _) => SetVariableValue::Literal(value),
+                (Err(_), Some(Token::Word(ident))) => SetVariableValue::Ident(ident.as_ident()),
+                (Err(_), other) => self.expected("variable value", other)?,
+            };
+            Ok(Statement::SetVariable {
+                local: modifier == Some("LOCAL"),
+                variable,
+                value,
+            })
+        } else if variable == "TRANSACTION" && modifier.is_none() {
+            Ok(Statement::SetTransaction {
+                modes: self.parse_transaction_modes()?,
+            })
         } else {
-            self.parse_show_objects().ok_or_else(|| {
-                self.expected::<()>(
-                    "One of {COLUMNS, TABLES, VIEWS, SOURCES, SINKS}",
-                    self.peek_token(),
-                )
-                .unwrap_err()
+            self.expected("variable name", self.peek_token())
+        }
+    }
+
+    pub fn parse_show(&mut self) -> Result<Statement, ParserError> {
+        if self
+            .parse_one_of_keywords(&["EXTENDED", "FULL", "COLUMNS", "FIELDS"])
+            .is_some()
+        {
+            self.prev_token();
+            self.parse_show_columns()
+        } else if let Some(object_type) =
+            self.parse_one_of_keywords(&["SOURCES", "VIEWS", "SINKS", "TABLES"])
+        {
+            // TODO(benesch): support LIKE/WHERE filters, like we do for SHOW
+            // COLUMNS, for parity with MySQL.
+            Ok(Statement::ShowObjects {
+                object_type: match object_type {
+                    "SOURCES" => ObjectType::Source,
+                    "VIEWS" => ObjectType::View,
+                    "SINKS" => ObjectType::Sink,
+                    "TABLES" => ObjectType::Table,
+                    val => panic!(
+                        "`parse_one_of_keywords` returned an impossible value: {}",
+                        val
+                    ),
+                },
+            })
+        } else {
+            Ok(Statement::ShowVariable {
+                variable: self.parse_identifier()?,
             })
         }
     }
 
     fn parse_show_columns(&mut self) -> Result<Statement, ParserError> {
-        if !self.parse_keyword("FROM") {
-            return self.expected("FROM", self.peek_token());
-        }
-        let table_or_schema = self.parse_object_name()?;
-
+        let extended = self.parse_keyword("EXTENDED");
+        let full = self.parse_keyword("FULL");
+        self.expect_one_of_keywords(&["COLUMNS", "FIELDS"])?;
+        self.expect_one_of_keywords(&["FROM", "IN"])?;
+        let table_name = self.parse_object_name()?;
+        // MySQL also supports FROM <database> here. In other words, MySQL
+        // allows both FROM <table> FROM <database> and FROM <database>.<table>,
+        // while we only support the latter for now.
+        let filter = self.parse_show_statement_filter()?;
         Ok(Statement::ShowColumns {
-            table_name: table_or_schema,
+            extended,
+            full,
+            table_name,
+            filter,
         })
     }
 
-    fn parse_show_objects(&mut self) -> Option<Statement> {
-        let object_type = self
-            .parse_one_of_keywords(&["SOURCES", "VIEWS", "SINKS", "TABLES"])
-            .map(|s| match s {
-                "SOURCES" => ObjectType::Source,
-                "VIEWS" => ObjectType::View,
-                "SINKS" => ObjectType::Sink,
-                "TABLES" => ObjectType::Table,
-                val => panic!(
-                    "`parse_one_of_keywords` returned an impossible value: {}",
-                    val
-                ),
-            })?;
-        Some(Statement::Show { object_type })
+    fn parse_show_statement_filter(&mut self) -> Result<Option<ShowStatementFilter>, ParserError> {
+        if self.parse_keyword("LIKE") {
+            Ok(Some(ShowStatementFilter::Like(
+                self.parse_literal_string()?,
+            )))
+        } else if self.parse_keyword("WHERE") {
+            Ok(Some(ShowStatementFilter::Where(self.parse_expr()?)))
+        } else {
+            Ok(None)
+        }
     }
 
     pub fn parse_table_and_joins(&mut self) -> Result<TableWithJoins, ParserError> {
@@ -2037,13 +2081,6 @@ impl Parser {
     pub fn parse_begin(&mut self) -> Result<Statement, ParserError> {
         let _ = self.parse_one_of_keywords(&["TRANSACTION", "WORK"]);
         Ok(Statement::StartTransaction {
-            modes: self.parse_transaction_modes()?,
-        })
-    }
-
-    pub fn parse_set_transaction(&mut self) -> Result<Statement, ParserError> {
-        self.expect_keyword("TRANSACTION")?;
-        Ok(Statement::SetTransaction {
             modes: self.parse_transaction_modes()?,
         })
     }
