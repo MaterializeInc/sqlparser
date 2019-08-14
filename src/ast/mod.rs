@@ -367,9 +367,9 @@ impl fmt::Display for WindowFrameBound {
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Statement {
-    /// SELECT
+    /// `SELECT`
     Query(Box<Query>),
-    /// INSERT
+    /// `INSERT`
     Insert {
         /// TABLE
         table_name: ObjectName,
@@ -386,7 +386,7 @@ pub enum Statement {
         /// VALUES a vector of values to be copied
         values: Vec<Option<String>>,
     },
-    /// UPDATE
+    /// `UPDATE`
     Update {
         /// TABLE
         table_name: ObjectName,
@@ -395,34 +395,34 @@ pub enum Statement {
         /// WHERE
         selection: Option<Expr>,
     },
-    /// DELETE
+    /// `DELETE`
     Delete {
-        /// FROM
+        /// `FROM`
         table_name: ObjectName,
-        /// WHERE
+        /// `WHERE`
         selection: Option<Expr>,
     },
-    /// CREATE SOURCE
+    /// `CREATE SOURCE`
     CreateSource {
         name: ObjectName,
         url: String,
         schema: SourceSchema,
         with_options: Vec<SqlOption>,
     },
-    /// CREATE SOURCES
+    /// `CREATE SOURCES`
     CreateSources {
         url: String,
         schema_registry: String,
         with_options: Vec<SqlOption>,
     },
-    /// CREATE SINK
+    /// `CREATE SINK`
     CreateSink {
         name: ObjectName,
         from: ObjectName,
         url: String,
         with_options: Vec<SqlOption>,
     },
-    /// CREATE VIEW
+    /// `CREATE VIEW`
     CreateView {
         /// View name
         name: ObjectName,
@@ -431,7 +431,7 @@ pub enum Statement {
         materialized: bool,
         with_options: Vec<SqlOption>,
     },
-    /// CREATE TABLE
+    /// `CREATE TABLE`
     CreateTable {
         /// Table name
         name: ObjectName,
@@ -443,13 +443,13 @@ pub enum Statement {
         file_format: Option<FileFormat>,
         location: Option<String>,
     },
-    /// ALTER TABLE
+    /// `ALTER TABLE`
     AlterTable {
         /// Table name
         name: ObjectName,
         operation: AlterTableOperation,
     },
-    /// DROP
+    /// `DROP`
     Drop {
         /// The type of the object to drop: TABLE, VIEW, etc.
         object_type: ObjectType,
@@ -461,7 +461,7 @@ pub enum Statement {
         /// `RESTRICT` or no drop behavior at all was specified.
         cascade: bool,
     },
-    /// SET <variable>
+    /// `SET <variable>`
     ///
     /// Note: this is not a standard SQL statement, but it is supported by at
     /// least MySQL and PostgreSQL. Not all MySQL-specific syntatic forms are
@@ -471,11 +471,11 @@ pub enum Statement {
         variable: Ident,
         value: SetVariableValue,
     },
-    /// SHOW <variable>
+    /// `SHOW <variable>`
     ///
     /// Note: this is a PostgreSQL-specific statement.
     ShowVariable { variable: Ident },
-    /// SHOW <object>S
+    /// `SHOW <object>S`
     ///
     /// ```sql
     /// SHOW TABLES;
@@ -484,7 +484,7 @@ pub enum Statement {
     /// SHOW SINKS;
     /// ```
     ShowObjects { object_type: ObjectType },
-    /// SHOW COLUMNS
+    /// `SHOW COLUMNS`
     ///
     /// Note: this is a MySQL-specific statement.
     ShowColumns {
@@ -495,15 +495,15 @@ pub enum Statement {
     },
     /// `{ BEGIN [ TRANSACTION | WORK ] | START TRANSACTION } ...`
     StartTransaction { modes: Vec<TransactionMode> },
-    /// SET TRANSACTION ...
+    /// `SET TRANSACTION ...`
     SetTransaction { modes: Vec<TransactionMode> },
-    /// COMMIT [ TRANSACTION | WORK ] [ AND [ NO ] CHAIN ]
+    /// `COMMIT [ TRANSACTION | WORK ] [ AND [ NO ] CHAIN ]`
     Commit { chain: bool },
-    /// ROLLBACK [ TRANSACTION | WORK ] [ AND [ NO ] CHAIN ]
+    /// `ROLLBACK [ TRANSACTION | WORK ] [ AND [ NO ] CHAIN ]`
     Rollback { chain: bool },
-    /// PEEK [ IMMEDIATE ]
+    /// `PEEK [ IMMEDIATE ]`
     Peek { name: ObjectName, immediate: bool },
-    /// TAIL
+    /// `TAIL`
     Tail { name: ObjectName },
 }
 
