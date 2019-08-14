@@ -14,7 +14,18 @@ use bigdecimal::BigDecimal;
 use std::fmt;
 
 mod datetime;
-pub use datetime::{DateTimeField, IntervalValue, ParsedDateTime};
+pub use datetime::{DateTimeField, Interval, IntervalValue, ParsedDateTime};
+
+#[derive(Debug)]
+pub struct ValueError(String);
+
+impl std::error::Error for ValueError {}
+
+impl fmt::Display for ValueError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "ValueError({})", self.0)
+    }
+}
 
 /// Primitive SQL values such as number and string
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -54,6 +65,7 @@ pub enum Value {
 }
 
 impl fmt::Display for Value {
+    #[allow(clippy::unneeded_field_pattern)] // want to be warned if we add another field
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Value::Long(v) => write!(f, "{}", v),
@@ -131,4 +143,40 @@ impl<'a> fmt::Display for EscapeSingleQuoteString<'a> {
 
 pub fn escape_single_quote_string(s: &str) -> EscapeSingleQuoteString<'_> {
     EscapeSingleQuoteString(s)
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    /// An extremely default interval value
+    fn ivalue() -> IntervalValue {
+        IntervalValue {
+            value: "".into(),
+            parsed: ParsedDateTime::default(),
+            leading_field: DateTimeField::Year,
+            leading_precision: None,
+            last_field: None,
+            fractional_seconds_precision: None,
+        }
+    }
+
+    #[test]
+    fn interval_values() {
+        let mut iv = ivalue();
+        iv.parsed.year = None;
+        match iv.computed() {
+            Err(ValueError { .. }) => {}
+            Ok(why) => panic!("should not be okay: {:?}", why),
+        }
+    }
+
+    #[test]
+    fn iterate_datetimefield() {
+        use DateTimeField::*;
+        assert_eq!(
+            Year.into_iter().take(10).collect::<Vec<_>>(),
+            vec![Month, Day, Hour, Minute, Second]
+        )
+    }
 }

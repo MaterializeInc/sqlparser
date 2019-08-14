@@ -1,4 +1,7 @@
 use std::fmt;
+use std::time::Duration;
+
+use super::ValueError;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct IntervalValue {
@@ -38,6 +41,128 @@ pub struct IntervalValue {
     /// will be `Second` and the `last_field` will be `None`),
     /// or as `__ TO SECOND(x)`.
     pub fractional_seconds_precision: Option<u64>,
+}
+
+impl IntervalValue {
+    /// Get Either the number of Months or the Duration specified by this interval
+    ///
+    /// # Errors
+    ///
+    /// If a required field is missing (i.e. there is no value) or the `TO` field is wrong
+    pub fn computed(&self) -> Result<Interval, ValueError> {
+        use DateTimeField::*;
+        match &self.leading_field {
+            Year => match &self.last_field {
+                Some(Month) => Ok(Interval::Months(
+                    self.positivity() * self.parsed.year.unwrap_or(0) as i64 * 12
+                        + self.parsed.month.unwrap_or(0) as i64,
+                )),
+                Some(Year) | None => self
+                    .parsed
+                    .year
+                    .ok_or_else(|| ValueError("No YEAR provided".into()))
+                    .map(|year| Interval::Months(self.positivity() * year as i64 * 12)),
+                Some(invalid) => Err(ValueError(format!(
+                    "Invalid specifier for YEAR precision: {}",
+                    &invalid
+                ))),
+            },
+            Month => match &self.last_field {
+                Some(Month) | None => self
+                    .parsed
+                    .month
+                    .ok_or_else(|| ValueError("No MONTH provided".into()))
+                    .map(|m| Interval::Months(self.positivity() * m as i64)),
+                Some(invalid) => Err(ValueError(format!(
+                    "Invalid specifier for MONTH precision: {}",
+                    &invalid
+                ))),
+            },
+            durationlike_field => {
+                let mut seconds = 0u64;
+                match self.units_of(&durationlike_field) {
+                    Some(time) => seconds += time * seconds_multiplier(&durationlike_field),
+                    None => {
+                        return Err(ValueError(format!(
+                            "No {} provided in value string for {}",
+                            durationlike_field, self.value
+                        )))
+                    }
+                }
+                let min_field = &self
+                    .last_field
+                    .clone()
+                    .unwrap_or_else(|| durationlike_field.clone());
+                for field in durationlike_field
+                    .clone()
+                    .into_iter()
+                    .take_while(|f| f <= min_field)
+                {
+                    if let Some(time) = self.units_of(&field) {
+                        seconds += time * seconds_multiplier(&field);
+                    }
+                }
+                let duration = match (min_field, self.parsed.nano) {
+                    (DateTimeField::Second, Some(nanos)) => Duration::new(seconds, nanos),
+                    (_, _) => Duration::from_secs(seconds),
+                };
+                Ok(Interval::Duration {
+                    is_positive: self.parsed.is_positive,
+                    duration,
+                })
+            }
+        }
+    }
+
+    /// Retrieve the number that we parsed out of the literal string for the `field`
+    fn units_of(&self, field: &DateTimeField) -> Option<u64> {
+        match field {
+            DateTimeField::Year => self.parsed.year,
+            DateTimeField::Month => self.parsed.month,
+            DateTimeField::Day => self.parsed.day,
+            DateTimeField::Hour => self.parsed.hour,
+            DateTimeField::Minute => self.parsed.minute,
+            DateTimeField::Second => self.parsed.second,
+        }
+    }
+
+    /// `1` if is_positive, otherwise `-1`
+    fn positivity(&self) -> i64 {
+        if self.parsed.is_positive {
+            1
+        } else {
+            -1
+        }
+    }
+}
+
+fn seconds_multiplier(field: &DateTimeField) -> u64 {
+    match field {
+        DateTimeField::Day => 60 * 60 * 24,
+        DateTimeField::Hour => 60 * 60,
+        DateTimeField::Minute => 60,
+        DateTimeField::Second => 1,
+        _other => unreachable!("Do not call with a non-duration field"),
+    }
+}
+
+/// The result of parsing an `INTERVAL '<value>' <unit> [TO <precision>]`
+///
+/// Units of type `YEAR` or `MONTH` are semantically some multiple of months,
+/// which are not well defined, and this parser normalizes them to some number
+/// of months.
+///
+/// Intervals of unit [`DateTimeField::Day`] or smaller are semantically a
+/// multiple of seconds.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Interval {
+    /// A possibly negative number of months for field types like `YEAR`
+    Months(i64),
+    /// An actual timespan, possibly negative, because why not
+    Duration {
+        is_positive: bool,
+        duration: Duration,
+    },
 }
 
 /// All of the fields that can appear in a literal `TIMESTAMP` or `INTERVAL` string

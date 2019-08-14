@@ -627,7 +627,7 @@ impl Parser {
             ));
         }
         let toks = datetime::tokenize_interval(value)?;
-        datetime::build_parsed_datetime(&toks, &leading_field, trailing_field)
+        datetime::build_parsed_datetime(&toks, leading_field, trailing_field)
     }
 
     /// Parses the parens following the `[ NOT ] IN` operator
