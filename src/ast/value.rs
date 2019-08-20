@@ -14,7 +14,7 @@ use bigdecimal::BigDecimal;
 use std::fmt;
 
 mod datetime;
-pub use datetime::{DateTimeField, Interval, IntervalValue, ParsedDateTime};
+pub use datetime::{DateTimeField, Interval, IntervalValue, ParsedDate, ParsedDateTime};
 
 #[derive(Debug)]
 pub struct ValueError(String);
@@ -43,7 +43,7 @@ pub enum Value {
     /// Boolean value true or false
     Boolean(bool),
     /// `DATE '...'` literals
-    Date(String),
+    Date(String, ParsedDate),
     /// `TIME '...'` literals
     Time(String),
     /// `TIMESTAMP '...'` literals
@@ -74,7 +74,7 @@ impl fmt::Display for Value {
             Value::NationalStringLiteral(v) => write!(f, "N'{}'", v),
             Value::HexStringLiteral(v) => write!(f, "X'{}'", v),
             Value::Boolean(v) => write!(f, "{}", v),
-            Value::Date(v) => write!(f, "DATE '{}'", escape_single_quote_string(v)),
+            Value::Date(v, _) => write!(f, "DATE '{}'", escape_single_quote_string(v)),
             Value::Time(v) => write!(f, "TIME '{}'", escape_single_quote_string(v)),
             Value::Timestamp(v) => write!(f, "TIMESTAMP '{}'", escape_single_quote_string(v)),
             Value::Interval(IntervalValue {

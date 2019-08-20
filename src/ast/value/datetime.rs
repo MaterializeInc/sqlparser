@@ -64,14 +64,14 @@ impl IntervalValue {
         match &self.leading_field {
             Year => match &self.last_field {
                 Some(Month) => Ok(Interval::Months(
-                    self.positivity() * self.parsed.year.unwrap_or(0) as i64 * 12
+                    self.parsed.positivity() * self.parsed.year.unwrap_or(0) as i64 * 12
                         + self.parsed.month.unwrap_or(0) as i64,
                 )),
                 Some(Year) | None => self
                     .parsed
                     .year
                     .ok_or_else(|| ValueError("No YEAR provided".into()))
-                    .map(|year| Interval::Months(self.positivity() * year as i64 * 12)),
+                    .map(|year| Interval::Months(self.parsed.positivity() * year as i64 * 12)),
                 Some(invalid) => Err(ValueError(format!(
                     "Invalid specifier for YEAR precision: {}",
                     &invalid
@@ -82,7 +82,7 @@ impl IntervalValue {
                     .parsed
                     .month
                     .ok_or_else(|| ValueError("No MONTH provided".into()))
-                    .map(|m| Interval::Months(self.positivity() * m as i64)),
+                    .map(|m| Interval::Months(self.parsed.positivity() * m as i64)),
                 Some(invalid) => Err(ValueError(format!(
                     "Invalid specifier for MONTH precision: {}",
                     &invalid
@@ -218,15 +218,6 @@ impl IntervalValue {
                 .filter(|field| self.units_of(&field).is_some()),
         )
     }
-
-    /// `1` if is_positive, otherwise `-1`
-    fn positivity(&self) -> i64 {
-        if self.parsed.is_positive {
-            1
-        } else {
-            -1
-        }
-    }
 }
 
 fn fields_msg(fields: impl Iterator<Item = DateTimeField>) -> String {
@@ -265,6 +256,14 @@ pub enum Interval {
     },
 }
 
+/// The fields of a date
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ParsedDate {
+    pub year: i64,
+    pub month: u8,
+    pub day: u8,
+}
+
 /// All of the fields that can appear in a literal `TIMESTAMP` or `INTERVAL` string
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ParsedDateTime {
@@ -276,6 +275,16 @@ pub struct ParsedDateTime {
     pub minute: Option<u64>,
     pub second: Option<u64>,
     pub nano: Option<u32>,
+}
+
+impl ParsedDateTime {
+    /// `1` if is_positive, else `-1`
+    pub(crate) fn positivity(&self) -> i64 {
+        match self.is_positive {
+            true => 1,
+            false => -1,
+        }
+    }
 }
 
 impl Default for ParsedDateTime {

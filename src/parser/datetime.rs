@@ -145,8 +145,18 @@ pub(crate) fn build_parsed_datetime(
                 let val = *val;
                 match current_field {
                     DateTimeField::Year => pdt.year = Some(val),
-                    DateTimeField::Month => pdt.month = Some(val),
-                    DateTimeField::Day => pdt.day = Some(val),
+                    DateTimeField::Month => {
+                        if val < 1 {
+                            return parser_err!("Invalid Month {} in {}", val, value);
+                        }
+                        pdt.month = Some(val)
+                    }
+                    DateTimeField::Day => {
+                        if val < 1 {
+                            return parser_err!("Invalid Day {} in {}", val, value);
+                        }
+                        pdt.day = Some(val)
+                    }
                     DateTimeField::Hour => pdt.hour = Some(val),
                     DateTimeField::Minute => pdt.minute = Some(val),
                     DateTimeField::Second if seconds_seen == 0 => {

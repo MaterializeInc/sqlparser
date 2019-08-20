@@ -1221,8 +1221,56 @@ fn parse_literal_date() {
     let sql = "SELECT DATE '1999-01-01'";
     let select = verified_only_select(sql);
     assert_eq!(
-        &Expr::Value(Value::Date("1999-01-01".into())),
+        &Expr::Value(Value::Date(
+            "1999-01-01".into(),
+            ParsedDate {
+                year: 1999,
+                month: 1,
+                day: 1,
+            }
+        )),
         expr_from_projection(only(&select.projection)),
+    );
+
+    let sql = "SELECT DATE '-1-01-01'";
+    let select = verified_only_select(sql);
+    assert_eq!(
+        &Expr::Value(Value::Date(
+            "-1-01-01".into(),
+            ParsedDate {
+                year: -1,
+                month: 1,
+                day: 1,
+            }
+        )),
+        expr_from_projection(only(&select.projection)),
+    );
+
+    let sql = "SELECT DATE '0-01-01'";
+    let select = verified_only_select(sql);
+    assert_eq!(
+        &Expr::Value(Value::Date(
+            "0-01-01".into(),
+            ParsedDate {
+                year: 0,
+                month: 1,
+                day: 1,
+            }
+        )),
+        expr_from_projection(only(&select.projection)),
+    );
+
+    assert_eq!(
+        ParserError::ParserError("Invalid Month 0 in 0-00-00".into()),
+        parse_sql_statements("SELECT DATE '0-00-00'").unwrap_err(),
+    );
+    assert_eq!(
+        ParserError::ParserError("Invalid Day 0 in 0-01-00".into()),
+        parse_sql_statements("SELECT DATE '0-01-00'").unwrap_err(),
+    );
+    assert_eq!(
+        ParserError::ParserError("Hours cannot be supplied for DATE, got 2 in '1-1-1 2'".into()),
+        parse_sql_statements("SELECT DATE '1-1-1 2").unwrap_err(),
     );
 }
 

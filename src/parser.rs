@@ -22,6 +22,8 @@ use super::tokenizer::*;
 use std::error::Error;
 use std::fmt;
 
+use crate::ast::ParsedDate;
+
 // Use `Parser::expected` instead, if possible
 macro_rules! parser_err {
     ($MSG:expr) => {
@@ -201,7 +203,7 @@ impl Parser {
                 }
                 "CASE" => self.parse_case_expr(),
                 "CAST" => self.parse_cast_expr(),
-                "DATE" => Ok(Expr::Value(Value::Date(self.parse_literal_string()?))),
+                "DATE" => Ok(Expr::Value(self.parse_date()?)),
                 "EXISTS" => self.parse_exists_expr(),
                 "EXTRACT" => self.parse_extract_expr(),
                 "INTERVAL" => self.parse_literal_interval(),
@@ -455,6 +457,50 @@ impl Parser {
             }
         } else {
             self.expected("date/time field", tok)?
+        }
+    }
+
+    fn parse_date(&mut self) -> Result<Value, ParserError> {
+        use std::convert::TryInto;
+
+        let value = self.parse_literal_string()?;
+        let pdt = Self::parse_interval_string(&value, &DateTimeField::Year)?;
+
+        match (pdt.year, pdt.month, pdt.day, pdt.hour) {
+            (Some(year), Some(month), Some(day), None) => {
+                let p_err = |e: std::num::TryFromIntError, field: &str| {
+                    ParserError::ParserError(format!(
+                        "{} in date '{}' is invalid: {}",
+                        field, value, e
+                    ))
+                };
+
+                // type inference with try_into() fails so we need to mutate it negative
+                let mut year: i64 = year.try_into().map_err(|e| p_err(e, "Year"))?;
+                year *= pdt.positivity();
+                if month > 12 || month == 0 {
+                    return parser_err!(
+                        "Month in date '{}' must be a number between 1 and 12, got: {}",
+                        value,
+                        month
+                    );
+                }
+                let month: u8 = month.try_into().expect("invalid month");
+                let day: u8 = day.try_into().map_err(|e| p_err(e, "Day"))?;
+                if day == 0 {
+                    parser_err!("Day in date '{}' cannot be zero: {}", value, day)?;
+                }
+                Ok(Value::Date(value, ParsedDate { year, month, day }))
+            }
+            (Some(_), Some(_), Some(_), Some(hours)) => parser_err!(
+                "Hours cannot be supplied for DATE, got {} in '{}'",
+                hours,
+                value
+            ),
+            (_, _, _, _) => Err(ParserError::ParserError(format!(
+                "year, day and month are all required, got: '{}'",
+                value
+            ))),
         }
     }
 
