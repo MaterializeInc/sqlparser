@@ -46,10 +46,20 @@ pub struct IntervalValue {
 impl IntervalValue {
     /// Get Either the number of Months or the Duration specified by this interval
     ///
+    /// This computes the fiels permissively: it assumes that the leading field
+    /// (i.e. the lead in `INTERVAL 'str' LEAD [TO LAST]`) is valid and parses
+    /// all field in the `str` starting at the leading field, ignoring the
+    /// truncation that should be specified by `LAST`.
+    ///
+    /// See also the related [`fields_match_precision`] function that will give
+    /// an error if the interval string does not exactly match the `FROM TO
+    /// LAST` spec.
+    ///
     /// # Errors
     ///
-    /// If a required field is missing (i.e. there is no value) or the `TO` field is wrong
-    pub fn computed(&self) -> Result<Interval, ValueError> {
+    /// If a required field is missing (i.e. there is no value) or the `TO
+    /// LAST` field is larger than the `LEAD`.
+    pub fn computed_permissive(&self) -> Result<Interval, ValueError> {
         use DateTimeField::*;
         match &self.leading_field {
             Year => match &self.last_field {
@@ -126,6 +136,89 @@ impl IntervalValue {
         }
     }
 
+    /// Verify that the fields in me make sense
+    ///
+    /// Returns Ok if the fields are fully specified, otherwise an error
+    ///
+    /// # Examples
+    ///
+    /// ```sql
+    /// INTERVAL '1 5' DAY TO HOUR -- Ok
+    /// INTERVAL '1 5' DAY         -- Err
+    /// INTERVAL '1:2:3' HOUR TO SECOND   -- Ok
+    /// INTERVAL '1:2:3' HOUR TO MINUTE   -- Err
+    /// INTERVAL '1:2:3' MINUTE TO SECOND -- Err
+    /// INTERVAL '1:2:3' DAY TO SECOND    -- Err
+    /// ```
+    pub fn fields_match_precision(&self) -> Result<(), ValueError> {
+        let mut errors = vec![];
+        let last_field = self
+            .last_field
+            .as_ref()
+            .unwrap_or_else(|| &self.leading_field);
+        let mut extra_leading_fields = vec![];
+        let mut extra_trailing_fields = vec![];
+        // check for more data in the input string than was requested in <FIELD> TO <FIELD>
+        for field in std::iter::once(DateTimeField::Year).chain(DateTimeField::Year.into_iter()) {
+            if self.units_of(&field).is_none() {
+                continue;
+            }
+
+            if field < self.leading_field {
+                extra_leading_fields.push(field.clone());
+            }
+            if &field > last_field {
+                extra_trailing_fields.push(field.clone());
+            }
+        }
+
+        if !extra_leading_fields.is_empty() {
+            errors.push(format!(
+                "The interval string '{}' specifies {}s but the significance requested is {}",
+                self.value,
+                fields_msg(extra_leading_fields.into_iter()),
+                self.leading_field
+            ));
+        }
+        if !extra_trailing_fields.is_empty() {
+            errors.push(format!(
+                "The interval string '{}' specifies {}s but the requested precision would truncate to {}",
+                self.value, fields_msg(extra_trailing_fields.into_iter()), last_field
+            ));
+        }
+
+        // check for data requested by the <FIELD> TO <FIELD> that does not exist in the data
+        let missing_fields = match (
+            self.units_of(&self.leading_field),
+            self.units_of(&last_field),
+        ) {
+            (Some(_), Some(_)) => vec![],
+            (None, Some(_)) => vec![&self.leading_field],
+            (Some(_), None) => vec![last_field],
+            (None, None) => vec![&self.leading_field, last_field],
+        };
+
+        if !missing_fields.is_empty() {
+            errors.push(format!(
+                "The interval string '{}' provides {} - which does not include the requested field(s) {}",
+                self.value, self.present_fields(), fields_msg(missing_fields.into_iter().cloned())));
+        }
+
+        if !errors.is_empty() {
+            Err(ValueError(errors.join("; ")))
+        } else {
+            Ok(())
+        }
+    }
+
+    fn present_fields(&self) -> String {
+        fields_msg(
+            std::iter::once(DateTimeField::Year)
+                .chain(DateTimeField::Year.into_iter())
+                .filter(|field| self.units_of(&field).is_some()),
+        )
+    }
+
     /// `1` if is_positive, otherwise `-1`
     fn positivity(&self) -> i64 {
         if self.parsed.is_positive {
@@ -134,6 +227,13 @@ impl IntervalValue {
             -1
         }
     }
+}
+
+fn fields_msg(fields: impl Iterator<Item = DateTimeField>) -> String {
+    fields
+        .map(|field: DateTimeField| field.to_string())
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 fn seconds_multiplier(field: &DateTimeField) -> u64 {

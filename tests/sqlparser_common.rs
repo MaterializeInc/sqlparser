@@ -1259,17 +1259,30 @@ fn parse_literal_interval_monthlike() {
         iv,
         Interval::Months(13),
         None,
+        None,
     );
 
     let mut iv = single_iv();
     iv.parsed.year = Some(1);
     iv.leading_field = DateTimeField::Year;
-    verify_interval("SELECT INTERVAL '1' YEAR", iv, Interval::Months(12), None);
+    verify_interval(
+        "SELECT INTERVAL '1' YEAR",
+        iv,
+        Interval::Months(12),
+        None,
+        None,
+    );
 
     let mut iv = single_iv();
     iv.parsed.month = Some(1);
     iv.leading_field = DateTimeField::Month;
-    verify_interval("SELECT INTERVAL '1' MONTH", iv, Interval::Months(1), None);
+    verify_interval(
+        "SELECT INTERVAL '1' MONTH",
+        iv,
+        Interval::Months(1),
+        None,
+        None,
+    );
 
     let mut iv = single_iv();
     iv.parsed.year = Some(1);
@@ -1280,6 +1293,7 @@ fn parse_literal_interval_monthlike() {
         iv.clone(),
         Interval::Months(12),
         None,
+        Some("The interval string '1' provides YEAR - which does not include the requested field(s) MONTH"),
     );
 
     iv.value = "1-1".to_string();
@@ -1289,11 +1303,18 @@ fn parse_literal_interval_monthlike() {
         iv.clone(),
         Interval::Months(13),
         None,
+        None,
     );
 
     // if there is no last field then we only compute the highest significance one
     iv.last_field = None;
-    verify_interval("SELECT INTERVAL '1-1' YEAR", iv, Interval::Months(12), None);
+    verify_interval(
+        "SELECT INTERVAL '1-1' YEAR",
+        iv.clone(),
+        Interval::Months(12),
+        None,
+        Some("The interval string '1-1' specifies MONTHs but the requested precision would truncate to YEAR"),
+    );
 }
 
 #[test]
@@ -1308,6 +1329,24 @@ fn parse_literal_interval_error_messages() {
     assert_eq!(
         ParserError::ParserError("Expected end of statement, found: (".to_string()),
         result.unwrap_err(),
+    );
+
+    let result = parse_sql_statements("SELECT INTERVAL '1 1-1' DAY");
+    assert_eq!(
+        ParserError::ParserError(
+            "Invalid interval part at offset 3: '1 1-1' provided Dash but expected Colon"
+                .to_string()
+        ),
+        result.unwrap_err()
+    );
+
+    let result = parse_sql_statements("SELECT INTERVAL '1 1:1' HOUR");
+    assert_eq!(
+        ParserError::ParserError(
+            "Invalid interval part at offset 1: '1 1:1' provided Space but expected Colon"
+                .to_string(),
+        ),
+        result.unwrap_err()
     );
 }
 
@@ -1335,6 +1374,7 @@ fn parse_literal_interval_with_character_precision() {
             duration: Duration::new(61, 10_000_000),
         },
         Some("61.01s"),
+        None,
     );
 
     verify_interval(
@@ -1355,6 +1395,7 @@ fn parse_literal_interval_with_character_precision() {
             duration: Duration::from_secs(1),
         },
         Some("1s"),
+        None,
     );
 
     // We ignore the (1) precision because that's what postgres/mysql do, and
@@ -1378,6 +1419,7 @@ fn parse_literal_interval_with_character_precision() {
             duration: Duration::from_secs(10 * 60 * 60),
         },
         Some("36000s"),
+        None,
     );
 }
 
@@ -1403,6 +1445,7 @@ fn parse_literal_interval_durationlike() {
             duration: Duration::from_secs(10 * 60 * 60),
         },
         Some("36000s"),
+        None,
     );
 
     let mut iv = single_iv();
@@ -1413,6 +1456,7 @@ fn parse_literal_interval_durationlike() {
         iv,
         dur_secs(3600 * 24),
         Some("86400s"),
+        None,
     );
     let mut iv = single_iv();
     iv.parsed.hour = Some(1);
@@ -1422,15 +1466,57 @@ fn parse_literal_interval_durationlike() {
         iv,
         dur_secs(3600),
         Some("3600s"),
+        None,
     );
     let mut iv = single_iv();
     iv.parsed.minute = Some(1);
     iv.leading_field = DateTimeField::Minute;
-    verify_interval("SELECT INTERVAL '1' MINUTE", iv, dur_secs(60), Some("60s"));
+    verify_interval(
+        "SELECT INTERVAL '1' MINUTE",
+        iv,
+        dur_secs(60),
+        Some("60s"),
+        None,
+    );
     let mut iv = single_iv();
     iv.parsed.second = Some(1);
     iv.leading_field = DateTimeField::Second;
-    verify_interval("SELECT INTERVAL '1' SECOND", iv, dur_secs(1), Some("1s"));
+    verify_interval(
+        "SELECT INTERVAL '1' SECOND",
+        iv,
+        dur_secs(1),
+        Some("1s"),
+        None,
+    );
+
+    let mut iv = single_iv();
+    iv.value = "1 4:5".into();
+    iv.parsed.day = Some(1);
+    iv.parsed.hour = Some(4);
+    iv.parsed.minute = Some(5);
+    iv.leading_field = DateTimeField::Day;
+    iv.last_field = Some(DateTimeField::Hour);
+    verify_interval(
+        "SELECT INTERVAL '1 4:5' DAY TO HOUR",
+        iv.clone(),
+        dur_secs(3600 * 24 + 4 * 3600),
+        Some("100800s"),
+        Some("The interval string '1 4:5' specifies MINUTEs but the requested precision would truncate to HOUR"),
+    );
+    let mut iv = single_iv();
+    iv.value = "1 2:3".into();
+    iv.parsed.day = Some(1);
+    iv.parsed.hour = Some(2);
+    iv.parsed.minute = Some(3);
+    iv.leading_field = DateTimeField::Day;
+    iv.last_field = Some(DateTimeField::Second);
+    verify_interval(
+        "SELECT INTERVAL '1 2:3' DAY TO SECOND",
+        iv.clone(),
+        dur_secs(3600 * 24 + 2 * 3600 + 3 * 60),
+        Some("93780s"),
+        Some("The interval string '1 2:3' provides DAY, HOUR, MINUTE - which does not include the requested field(s) SECOND"),
+    );
 
     let mut iv = single_iv();
     iv.parsed.day = Some(1);
@@ -1441,6 +1527,7 @@ fn parse_literal_interval_durationlike() {
         iv.clone(),
         dur_secs(3600 * 24),
         Some("86400s"),
+        Some("The interval string '1' provides DAY - which does not include the requested field(s) HOUR"),
     );
     iv.last_field = Some(DateTimeField::Minute);
     verify_interval(
@@ -1448,6 +1535,7 @@ fn parse_literal_interval_durationlike() {
         iv.clone(),
         dur_secs(3600 * 24),
         Some("86400s"),
+        Some("The interval string '1' provides DAY - which does not include the requested field(s) MINUTE"),
     );
     iv.last_field = Some(DateTimeField::Second);
     verify_interval(
@@ -1455,6 +1543,7 @@ fn parse_literal_interval_durationlike() {
         iv.clone(),
         dur_secs(3600 * 24),
         Some("86400s"),
+        Some("The interval string '1' provides DAY - which does not include the requested field(s) SECOND"),
     );
     iv.value = "1 1:1:1.1".to_string();
     iv.parsed.hour = Some(1);
@@ -1469,6 +1558,7 @@ fn parse_literal_interval_durationlike() {
             duration: Duration::new(3600 * 24 + 3600 + 60 + 1, 100_000_000),
         },
         Some("90061.1s"),
+        None,
     );
 
     iv.last_field = None;
@@ -1477,6 +1567,7 @@ fn parse_literal_interval_durationlike() {
         iv,
         dur_secs(3600 * 24),
         Some("86400s"),
+        Some("The interval string '1 1:1:1.1' specifies HOUR, MINUTE, SECONDs but the requested precision would truncate to DAY"),
     );
 
     let mut iv = single_iv();
@@ -1487,6 +1578,7 @@ fn parse_literal_interval_durationlike() {
         iv.clone(),
         dur_secs(3600),
         Some("3600s"),
+        Some("The interval string '1' provides HOUR - which does not include the requested field(s) MINUTE"),
     );
     iv.last_field = Some(DateTimeField::Second);
     verify_interval(
@@ -1494,6 +1586,7 @@ fn parse_literal_interval_durationlike() {
         iv,
         dur_secs(3600),
         Some("3600s"),
+        Some("The interval string '1' provides HOUR - which does not include the requested field(s) SECOND"),
     );
 
     let mut iv = single_iv();
@@ -1505,6 +1598,7 @@ fn parse_literal_interval_durationlike() {
         iv.clone(),
         dur_secs(60),
         Some("60s"),
+        None,
     );
     iv.last_field = Some(DateTimeField::Second);
     verify_interval(
@@ -1512,6 +1606,7 @@ fn parse_literal_interval_durationlike() {
         iv,
         dur_secs(60),
         Some("60s"),
+        Some("The interval string '1' provides MINUTE - which does not include the requested field(s) SECOND"),
     );
 
     // Negatives
@@ -1527,6 +1622,7 @@ fn parse_literal_interval_durationlike() {
             duration: Duration::from_secs(3600),
         },
         Some("3600s"),
+        None,
     );
 
     let mut iv = single_iv();
@@ -1535,7 +1631,13 @@ fn parse_literal_interval_durationlike() {
     iv.parsed.is_positive = false;
     iv.parsed.month = Some(1);
 
-    verify_interval("SELECT INTERVAL '-1' MONTH", iv, Interval::Months(-1), None);
+    verify_interval(
+        "SELECT INTERVAL '-1' MONTH",
+        iv,
+        Interval::Months(-1),
+        None,
+        None,
+    );
 }
 
 #[test]
@@ -2968,6 +3070,7 @@ fn verify_interval(
     value: IntervalValue,
     expected_computed: Interval,
     expected_duration_str: Option<&str>,
+    expected_field_match_error: Option<&str>,
 ) {
     // If there's a failure this shows every the statement verified in this
     // test, pointing out which one failed
@@ -2977,7 +3080,7 @@ fn verify_interval(
         Expr::Value(Value::Interval(iv)) => {
             assert_eq!(&value, iv);
 
-            let actually_computed = iv.computed().unwrap();
+            let actually_computed = iv.computed_permissive().unwrap();
             assert_eq!(expected_computed, actually_computed);
 
             if let Some(expected_dur) = expected_duration_str {
@@ -2993,6 +3096,12 @@ fn verify_interval(
             }
         }
         v => panic!("invalid value, expected interval for {}: {:?}", sql, v),
+    }
+    match expected_field_match_error {
+        None => value
+            .fields_match_precision()
+            .unwrap_or_else(|e| panic!("unexpected precision error: {}", e)),
+        Some(msg) => assert_eq!(value.fields_match_precision().unwrap_err().to_string(), msg),
     }
 }
 

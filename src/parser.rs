@@ -512,8 +512,7 @@ impl Parser {
                 }
             };
 
-        let (value, _warnings) =
-            Self::parse_interval_string(&raw_value, &leading_field, &last_field)?;
+        let value = Self::parse_interval_string(&raw_value, &leading_field)?;
 
         Ok(Expr::Value(Value::Interval(IntervalValue {
             value: raw_value,
@@ -619,15 +618,14 @@ impl Parser {
     pub fn parse_interval_string(
         value: &str,
         leading_field: &DateTimeField,
-        trailing_field: &Option<DateTimeField>,
-    ) -> Result<(ParsedDateTime, Vec<String>), ParserError> {
+    ) -> Result<ParsedDateTime, ParserError> {
         if value.is_empty() {
             return Err(ParserError::ParserError(
                 "Interval date string is empty!".to_string(),
             ));
         }
         let toks = datetime::tokenize_interval(value)?;
-        datetime::build_parsed_datetime(&toks, leading_field, trailing_field)
+        datetime::build_parsed_datetime(&toks, leading_field, value)
     }
 
     /// Parses the parens following the `[ NOT ] IN` operator

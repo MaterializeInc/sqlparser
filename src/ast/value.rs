@@ -23,7 +23,7 @@ impl std::error::Error for ValueError {}
 
 impl fmt::Display for ValueError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "ValueError({})", self.0)
+        write!(f, "{}", self.0)
     }
 }
 
@@ -165,7 +165,7 @@ mod test {
     fn interval_values() {
         let mut iv = ivalue();
         iv.parsed.year = None;
-        match iv.computed() {
+        match iv.computed_permissive() {
             Err(ValueError { .. }) => {}
             Ok(why) => panic!("should not be okay: {:?}", why),
         }

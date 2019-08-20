@@ -116,28 +116,12 @@ pub(crate) enum IntervalToken {
 pub(crate) fn build_parsed_datetime(
     tokens: &[IntervalToken],
     leading_field: &DateTimeField,
-    precision: &Option<DateTimeField>,
-) -> Result<(ParsedDateTime, Vec<String>), ParserError> {
+    value: &str,
+) -> Result<ParsedDateTime, ParserError> {
     use IntervalToken::*;
-
-    // if no precision is specified, then you should use the least possible precision
-    let precision = match precision {
-        Some(p) => p,
-        None => leading_field,
-    };
 
     let expected = potential_interval_tokens(&leading_field);
     let mut actual = tokens.iter().peekable();
-
-    let mut warnings = vec![];
-
-    if expected.len() > tokens.len() - 1 {
-        warnings.push(format!(
-            "More precision requested than supplied. Requested {} but only provided {} fields",
-            precision,
-            tokens.len(),
-        ))
-    }
 
     let is_positive = match actual.peek() {
         Some(val) if val == &&IntervalToken::Dash => {
@@ -152,7 +136,7 @@ pub(crate) fn build_parsed_datetime(
         ..Default::default()
     };
     let mut seconds_seen = 0;
-    for (atok, etok) in actual.zip(&expected) {
+    for (i, (atok, etok)) in actual.zip(&expected).enumerate() {
         match (atok, etok) {
             (Dash, Dash) | (Space, Space) | (Colon, Colon) | (Dot, Dot) => {
                 /* matching punctuation */
@@ -183,7 +167,9 @@ pub(crate) fn build_parsed_datetime(
             (Nanos(val), Nanos(_)) if seconds_seen == 1 => pdt.nano = Some(*val),
             (provided, expected) => {
                 return parser_err!(
-                    "Invalid interval part: string provided {:?} but expected {:?}",
+                    "Invalid interval part at offset {}: '{}' provided {:?} but expected {:?}",
+                    i,
+                    value,
                     provided,
                     expected,
                 )
@@ -191,7 +177,7 @@ pub(crate) fn build_parsed_datetime(
         }
     }
 
-    Ok((pdt, warnings))
+    Ok(pdt)
 }
 
 #[cfg(test)]
