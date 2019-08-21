@@ -615,7 +615,9 @@ impl fmt::Display for Statement {
                     write!(
                         f,
                         "LIKE {} ",
-                        like, // This needs to be the string from the LikeFilter
+                        match like {
+                            LikeFilter::Like(value) => Value::SingleQuotedString(value.clone()).to_string(),
+                        },
                     )?;
                 }
                 write!(

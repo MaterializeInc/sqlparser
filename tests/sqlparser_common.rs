@@ -2217,7 +2217,7 @@ fn parse_create_sources() {
 
 #[test]
 fn parse_create_sources_with_like_regex() {
-    let sql = "CREATE SOURCES LIKE %foo% FROM 'kafka://whatever' USING SCHEMA REGISTRY 'http://foo.bar:8081'";
+    let sql = "CREATE SOURCES LIKE '%foo%' FROM 'kafka://whatever' USING SCHEMA REGISTRY 'http://foo.bar:8081'";
     match verified_stmt(sql) {
         Statement::CreateSources {
             like,
@@ -2225,10 +2225,9 @@ fn parse_create_sources_with_like_regex() {
             schema_registry,
             with_options,
         } => {
-            println!("{:#?}", like);
             let like = like.unwrap();
             match like {
-                LikeFilter::Like(value) => assert_eq!("foo", value)
+                LikeFilter::Like(value) => assert_eq!("%foo%", value)
             }
             assert_eq!("kafka://whatever", url);
             assert_eq!("http://foo.bar:8081", schema_registry);
