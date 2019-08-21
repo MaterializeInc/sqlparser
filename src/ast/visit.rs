@@ -22,7 +22,6 @@
 #![allow(clippy::ptr_arg)]
 
 use super::*;
-use crate::ast::LikeFilter::Like;
 
 /// A trait that represents a visitor that walks through a SQL AST.
 ///
@@ -319,16 +318,12 @@ pub trait Visit<'ast> {
 
     fn visit_create_sources(
         &mut self,
-        like: Option<&'ast LikeFilter>,
+        like: Option<&'ast String>,
         url: &'ast String,
         schema_registry: &'ast String,
         with_options: &'ast Vec<SqlOption>,
     ) {
         visit_create_sources(self, like, url, schema_registry, with_options)
-    }
-
-    fn visit_like_filter(&mut self, like: &'ast LikeFilter) {
-        visit_like_filter(self, like)
     }
 
     fn visit_source_schema(&mut self, source_schema: &'ast SourceSchema) {
@@ -1164,28 +1159,18 @@ pub fn visit_create_source<'ast, V: Visit<'ast> + ?Sized>(
 
 pub fn visit_create_sources<'ast, V: Visit<'ast> + ?Sized>(
     visitor: &mut V,
-    like: Option<&'ast LikeFilter>,
+    like: Option<&'ast String>,
     url: &'ast String,
     schema_registry: &'ast String,
     with_options: &'ast Vec<SqlOption>,
 ) {
     if let Some(like) = like {
-        visitor.visit_like_filter(like);
+        visitor.visit_literal_string(like);
     }
     visitor.visit_literal_string(url);
     visitor.visit_literal_string(schema_registry);
     for option in with_options {
         visitor.visit_option(option);
-    }
-}
-
-pub fn visit_like_filter<'ast, V: Visit<'ast> + ?Sized>(
-    visitor: &mut V,
-    like: &'ast LikeFilter,
-) {
-    match like {
-        LikeFilter::Like(pattern) => visitor.visit_literal_string(pattern),
-        _ => (),
     }
 }
 

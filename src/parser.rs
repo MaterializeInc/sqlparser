@@ -47,7 +47,6 @@ pub enum IsLateral {
     NotLateral,
 }
 use IsLateral::*;
-use crate::ast::LikeFilter::Like;
 
 impl From<TokenizerError> for ParserError {
     fn from(e: TokenizerError) -> Self {
@@ -920,11 +919,11 @@ impl Parser {
         })
     }
 
-    fn parse_like_filter(&mut self) -> Result<Option<LikeFilter>, ParserError> {
+    fn parse_like_filter(&mut self) -> Result<Option<String>, ParserError> {
         if self.parse_keyword("LIKE") {
-            Ok(Some(LikeFilter::Like(
+            Ok(Some(
                 self.parse_literal_string()?
-            )))
+            ))
         } else {
             Ok(None)
         }

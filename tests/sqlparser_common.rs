@@ -2207,6 +2207,7 @@ fn parse_create_sources() {
             schema_registry,
             with_options,
         } => {
+            assert!(like.is_none());
             assert_eq!("kafka://whatever", url);
             assert_eq!("http://foo.bar:8081", schema_registry);
             assert!(with_options.is_empty());
@@ -2225,9 +2226,9 @@ fn parse_create_sources_with_like_regex() {
             schema_registry,
             with_options,
         } => {
-            let like = like.unwrap();
             match like {
-                LikeFilter::Like(value) => assert_eq!("%foo%", value)
+                Some(value) => assert_eq!("%foo%", value),
+                None => unimplemented!(),
             }
             assert_eq!("kafka://whatever", url);
             assert_eq!("http://foo.bar:8081", schema_registry);
