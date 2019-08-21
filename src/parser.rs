@@ -921,9 +921,7 @@ impl Parser {
 
     fn parse_like_filter(&mut self) -> Result<Option<String>, ParserError> {
         if self.parse_keyword("LIKE") {
-            Ok(Some(
-                self.parse_literal_string()?
-            ))
+            Ok(Some(self.parse_literal_string()?))
         } else {
             Ok(None)
         }

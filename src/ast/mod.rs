@@ -607,16 +607,9 @@ impl fmt::Display for Statement {
                 schema_registry,
                 with_options,
             } => {
-                write!(
-                    f,
-                    "CREATE SOURCES "
-                )?;
+                write!(f, "CREATE SOURCES ")?;
                 if let Some(like) = like {
-                    write!(
-                        f,
-                        "LIKE '{}' ",
-                        value::escape_single_quote_string(like),
-                    )?;
+                    write!(f, "LIKE '{}' ", value::escape_single_quote_string(like),)?;
                 }
                 write!(
                     f,
