@@ -411,6 +411,7 @@ pub enum Statement {
     },
     /// `CREATE SOURCES`
     CreateSources {
+        like: Option<LikeFilter>,
         url: String,
         schema_registry: String,
         with_options: Vec<SqlOption>,
@@ -601,13 +602,25 @@ impl fmt::Display for Statement {
                 Ok(())
             }
             Statement::CreateSources {
+                like,
                 url,
                 schema_registry,
                 with_options,
             } => {
                 write!(
                     f,
-                    "CREATE SOURCES FROM {} USING SCHEMA REGISTRY {}",
+                    "CREATE SOURCES "
+                )?;
+                if let Some(like) = like {
+                    write!(
+                        f,
+                        "LIKE {} ",
+                        like, // This needs to be the string from the LikeFilter
+                    )?;
+                }
+                write!(
+                    f,
+                    "FROM {} USING SCHEMA REGISTRY {}",
                     Value::SingleQuotedString(url.clone()).to_string(),
                     Value::SingleQuotedString(schema_registry.clone()).to_string(),
                 )?;
@@ -963,6 +976,20 @@ impl fmt::Display for TransactionIsolationLevel {
             RepeatableRead => "REPEATABLE READ",
             Serializable => "SERIALIZABLE",
         })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum LikeFilter {
+    Like(String)
+}
+
+impl fmt::Display for LikeFilter {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        use LikeFilter::*;
+        match self {
+            Like(pattern) => write!(f, "LIKE '{}", value::escape_single_quote_string(pattern)),
+        }
     }
 }
 
