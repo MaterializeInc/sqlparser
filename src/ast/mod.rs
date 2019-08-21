@@ -411,6 +411,7 @@ pub enum Statement {
     },
     /// `CREATE SOURCES`
     CreateSources {
+        like: Option<String>,
         url: String,
         schema_registry: String,
         with_options: Vec<SqlOption>,
@@ -601,13 +602,18 @@ impl fmt::Display for Statement {
                 Ok(())
             }
             Statement::CreateSources {
+                like,
                 url,
                 schema_registry,
                 with_options,
             } => {
+                write!(f, "CREATE SOURCES ")?;
+                if let Some(like) = like {
+                    write!(f, "LIKE '{}' ", value::escape_single_quote_string(like),)?;
+                }
                 write!(
                     f,
-                    "CREATE SOURCES FROM {} USING SCHEMA REGISTRY {}",
+                    "FROM {} USING SCHEMA REGISTRY {}",
                     Value::SingleQuotedString(url.clone()).to_string(),
                     Value::SingleQuotedString(schema_registry.clone()).to_string(),
                 )?;

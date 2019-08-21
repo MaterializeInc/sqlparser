@@ -318,11 +318,12 @@ pub trait Visit<'ast> {
 
     fn visit_create_sources(
         &mut self,
+        like: Option<&'ast String>,
         url: &'ast String,
         schema_registry: &'ast String,
         with_options: &'ast Vec<SqlOption>,
     ) {
-        visit_create_sources(self, url, schema_registry, with_options)
+        visit_create_sources(self, like, url, schema_registry, with_options)
     }
 
     fn visit_source_schema(&mut self, source_schema: &'ast SourceSchema) {
@@ -541,10 +542,11 @@ pub fn visit_statement<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, statement
             with_options,
         } => visitor.visit_create_source(name, url, schema, with_options),
         Statement::CreateSources {
+            like,
             url,
             schema_registry,
             with_options,
-        } => visitor.visit_create_sources(url, schema_registry, with_options),
+        } => visitor.visit_create_sources(like.as_ref(), url, schema_registry, with_options),
         Statement::CreateSink {
             name,
             from,
@@ -1157,10 +1159,14 @@ pub fn visit_create_source<'ast, V: Visit<'ast> + ?Sized>(
 
 pub fn visit_create_sources<'ast, V: Visit<'ast> + ?Sized>(
     visitor: &mut V,
+    like: Option<&'ast String>,
     url: &'ast String,
     schema_registry: &'ast String,
     with_options: &'ast Vec<SqlOption>,
 ) {
+    if let Some(like) = like {
+        visitor.visit_literal_string(like);
+    }
     visitor.visit_literal_string(url);
     visitor.visit_literal_string(schema_registry);
     for option in with_options {

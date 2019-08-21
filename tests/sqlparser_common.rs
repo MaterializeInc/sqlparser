@@ -2202,10 +2202,34 @@ fn parse_create_sources() {
     let sql = "CREATE SOURCES FROM 'kafka://whatever' USING SCHEMA REGISTRY 'http://foo.bar:8081'";
     match verified_stmt(sql) {
         Statement::CreateSources {
+            like,
             url,
             schema_registry,
             with_options,
         } => {
+            assert!(like.is_none());
+            assert_eq!("kafka://whatever", url);
+            assert_eq!("http://foo.bar:8081", schema_registry);
+            assert!(with_options.is_empty());
+        }
+        _ => assert!(false),
+    }
+}
+
+#[test]
+fn parse_create_sources_with_like_regex() {
+    let sql = "CREATE SOURCES LIKE '%foo%' FROM 'kafka://whatever' USING SCHEMA REGISTRY 'http://foo.bar:8081'";
+    match verified_stmt(sql) {
+        Statement::CreateSources {
+            like,
+            url,
+            schema_registry,
+            with_options,
+        } => {
+            match like {
+                Some(value) => assert_eq!("%foo%", value),
+                None => unimplemented!(),
+            }
             assert_eq!("kafka://whatever", url);
             assert_eq!("http://foo.bar:8081", schema_registry);
             assert!(with_options.is_empty());
