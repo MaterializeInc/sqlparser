@@ -614,10 +614,8 @@ impl fmt::Display for Statement {
                 if let Some(like) = like {
                     write!(
                         f,
-                        "LIKE {} ",
-                        match like {
-                            LikeFilter::Like(value) => Value::SingleQuotedString(value.clone()).to_string(),
-                        },
+                        "{} ",
+                        like,
                     )?;
                 }
                 write!(
@@ -990,7 +988,7 @@ impl fmt::Display for LikeFilter {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use LikeFilter::*;
         match self {
-            Like(pattern) => write!(f, "LIKE '{}", value::escape_single_quote_string(pattern)),
+            Like(pattern) => write!(f, "LIKE '{}'", value::escape_single_quote_string(pattern)),
         }
     }
 }
