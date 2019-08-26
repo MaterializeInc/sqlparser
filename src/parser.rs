@@ -2164,7 +2164,7 @@ impl Parser {
         } else if self.parse_keyword("PLAN") {
             Stage::Plan
         } else {
-            self.expected("execution stage", self.peek_token())?
+            self.expected("DATAFLOW or PLAN", self.peek_token())?
         };
         self.expect_keyword("FOR")?;
 
