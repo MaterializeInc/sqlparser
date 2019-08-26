@@ -16,7 +16,6 @@
 // If, over time, we convert these large variants to dedicated structs, we
 // can remove this escape hatch.
 #![allow(clippy::too_many_arguments)]
-
 // Disable lints that want us to rewrite `&Ident` as `&str`, as `&str` is not as
 // self-documenting as &Ident.
 #![allow(clippy::ptr_arg)]
@@ -512,7 +511,9 @@ pub trait Visit<'ast> {
         visit_tail(self, name)
     }
 
-    fn visit_explain(&mut self, _stage: &'ast Stage, query: &'ast Query) { visit_query( self, query) }
+    fn visit_explain(&mut self, _stage: &'ast Stage, query: &'ast Query) {
+        visit_query(self, query)
+    }
 }
 
 pub fn visit_statement<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, statement: &'ast Statement) {
