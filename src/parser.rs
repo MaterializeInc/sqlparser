@@ -22,7 +22,7 @@ use super::tokenizer::*;
 use std::error::Error;
 use std::fmt;
 
-use crate::ast::ParsedDate;
+use crate::ast::{ParsedDate, ParsedTimestamp};
 
 // Use `Parser::expected` instead, if possible
 macro_rules! parser_err {
@@ -212,7 +212,7 @@ impl Parser {
                     expr: Box::new(self.parse_subexpr(Self::UNARY_NOT_PREC)?),
                 }),
                 "TIME" => Ok(Expr::Value(Value::Time(self.parse_literal_string()?))),
-                "TIMESTAMP" => Ok(Expr::Value(Value::Timestamp(self.parse_literal_string()?))),
+                "TIMESTAMP" => Ok(Expr::Value(self.parse_timestamp()?)),
                 // Here `w` is a word, check if it's a part of a multi-part
                 // identifier, a function call, or a simple identifier:
                 _ => match self.peek_token() {
@@ -499,6 +499,73 @@ impl Parser {
             ),
             (_, _, _, _) => Err(ParserError::ParserError(format!(
                 "year, day and month are all required, got: '{}'",
+                value
+            ))),
+        }
+    }
+
+    fn parse_timestamp(&mut self) -> Result<Value, ParserError> {
+        use std::convert::TryInto;
+
+        let value = self.parse_literal_string()?;
+        let pdt = Self::parse_interval_string(&value, &DateTimeField::Year)?;
+
+        match (
+            pdt.year, pdt.month, pdt.day, pdt.hour, pdt.minute, pdt.second, pdt.nano,
+        ) {
+            (Some(year), Some(month), Some(day), Some(hour), Some(minute), Some(second), nano) => {
+                let p_err = |e: std::num::TryFromIntError, field: &str| {
+                    ParserError::ParserError(format!(
+                        "{} in date '{}' is invalid: {}",
+                        field, value, e
+                    ))
+                };
+
+                // type inference with try_into() fails so we need to mutate it negative
+                let mut year: i64 = year.try_into().map_err(|e| p_err(e, "Year"))?;
+                year *= pdt.positivity();
+                if month > 12 || month == 0 {
+                    return parser_err!(
+                        "Month in date '{}' must be a number between 1 and 12, got: {}",
+                        value,
+                        month
+                    );
+                }
+                let month: u8 = month.try_into().expect("invalid month");
+                if month == 0 {
+                    parser_err!("Month in timestamp '{}' cannot be zero: {}", value, day)?;
+                }
+                let day: u8 = day.try_into().map_err(|e| p_err(e, "Day"))?;
+                if day == 0 {
+                    parser_err!("Day in timestamp '{}' cannot be zero: {}", value, day)?;
+                }
+                let hour: u8 = hour.try_into().map_err(|e| p_err(e, "Hour"))?;
+                if hour > 23 {
+                    parser_err!("Hour in timestamp '{}' cannot be > 23: {}", value, hour)?;
+                }
+                let minute: u8 = minute.try_into().map_err(|e| p_err(e, "Minute"))?;
+                if minute > 59 {
+                    parser_err!("Minute in timestamp '{}' cannot be > 59: {}", value, minute)?;
+                }
+                let second: u8 = second.try_into().map_err(|e| p_err(e, "Minute"))?;
+                if second > 60 {
+                    parser_err!("Second in timestamp '{}' cannot be > 60: {}", value, second)?;
+                }
+                Ok(Value::Timestamp(
+                    value,
+                    ParsedTimestamp {
+                        year,
+                        month,
+                        day,
+                        hour,
+                        minute,
+                        second,
+                        nano: nano.unwrap_or(0),
+                    },
+                ))
+            }
+            _ => Err(ParserError::ParserError(format!(
+                "timestamp is missing fields, year through second are all required, got: '{}'",
                 value
             ))),
         }

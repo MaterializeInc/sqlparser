@@ -58,8 +58,9 @@ pub(crate) fn tokenize_interval(value: &str) -> Result<Vec<IntervalToken>, Parse
                     num_buf, e
                 ))
             })?;
-            let leading_zeroes = num_buf.chars().take_while(|c| c == &'0').count() as u32;
-            let multiplicand = 1_000_000_000 / 10_u32.pow(1 + leading_zeroes);
+            // this is guaranteed to be ascii, so len is fine
+            let chars = num_buf.len() as u32;
+            let multiplicand = 1_000_000_000 / 10_u32.pow(chars);
 
             toks.push(IntervalToken::Nanos(raw * multiplicand));
         }

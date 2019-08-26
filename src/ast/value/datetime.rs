@@ -256,7 +256,9 @@ pub enum Interval {
     },
 }
 
-/// The fields of a date
+/// The fields of a Date
+///
+/// This is not guaranteed to be a valid date
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ParsedDate {
     pub year: i64,
@@ -264,7 +266,27 @@ pub struct ParsedDate {
     pub day: u8,
 }
 
-/// All of the fields that can appear in a literal `TIMESTAMP` or `INTERVAL` string
+/// The fields in a `Timestamp`
+///
+/// Similar to a [`ParsedDateTime`], except that all the fields are required.
+///
+/// This is not guaranteed to be a valid date
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ParsedTimestamp {
+    pub year: i64,
+    pub month: u8,
+    pub day: u8,
+    pub hour: u8,
+    pub minute: u8,
+    pub second: u8,
+    pub nano: u32,
+}
+
+/// All of the fields that can appear in a literal `DATE`, `TIMESTAMP` or `INTERVAL` string
+///
+/// This is only used in an `Interval`, which can have any contiguous set of
+/// fields set, otherwise you are probably looking for [`ParsedDate`] or
+/// [`ParsedTimestamp`].
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ParsedDateTime {
     pub is_positive: bool,
