@@ -511,6 +511,8 @@ pub trait Visit<'ast> {
     fn visit_tail(&mut self, name: &'ast ObjectName) {
         visit_tail(self, name)
     }
+
+    fn visit_explain(&mut self, _stage: &'ast Stage, query: &'ast Query) { visit_query( self, query) }
 }
 
 pub fn visit_statement<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, statement: &'ast Statement) {
@@ -607,6 +609,7 @@ pub fn visit_statement<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, statement
         Statement::Tail { name } => {
             visitor.visit_tail(name);
         }
+        Statement::Explain { stage, query } => visitor.visit_explain(stage, query),
     }
 }
 
