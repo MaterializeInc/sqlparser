@@ -142,6 +142,7 @@ impl Parser {
                     "TAIL" => Ok(Statement::Tail {
                         name: self.parse_object_name()?,
                     }),
+                    "EXPLAIN" => Ok(self.parse_explain()?),
                     _ => parser_err!(format!(
                         "Unexpected keyword {:?} at the beginning of a statement",
                         w.to_string()
@@ -2153,6 +2154,24 @@ impl Parser {
         } else {
             Ok(false)
         }
+    }
+
+    /// Parse an `EXPLAIN [DATAFLOW | PLAN] FOR` statement, assuming that the `EXPLAIN` token
+    /// has already been consumed.
+    pub fn parse_explain(&mut self) -> Result<Statement, ParserError> {
+        let stage = if self.parse_keyword("DATAFLOW") {
+            Stage::Dataflow
+        } else if self.parse_keyword("PLAN") {
+            Stage::Plan
+        } else {
+            self.expected("DATAFLOW or PLAN", self.peek_token())?
+        };
+        self.expect_keyword("FOR")?;
+
+        Ok(Statement::Explain {
+            stage,
+            query: Box::new(self.parse_query()?),
+        })
     }
 }
 

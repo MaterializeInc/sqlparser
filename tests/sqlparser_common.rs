@@ -2714,6 +2714,21 @@ fn ensure_multiple_dialects_are_tested() {
     let _ = parse_sql_statements("SELECT @foo");
 }
 
+#[test]
+fn parse_explain() {
+    let ast = verified_stmt("EXPLAIN DATAFLOW FOR SELECT 665");
+    assert_eq!(ast, Statement::Explain {
+        stage: Stage::Dataflow,
+        query: Box::new(verified_query("SELECT 665")),
+    });
+
+    let ast = verified_stmt("EXPLAIN PLAN FOR SELECT 665");
+    assert_eq!(ast, Statement::Explain {
+        stage: Stage::Plan,
+        query: Box::new(verified_query("SELECT 665")),
+    });
+}
+
 fn parse_sql_statements(sql: &str) -> Result<Vec<Statement>, ParserError> {
     all_dialects().parse_sql_statements(sql)
 }

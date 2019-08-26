@@ -363,6 +363,25 @@ impl fmt::Display for WindowFrameBound {
     }
 }
 
+/// Specifies what [Statement::Explain] is actually explaining
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Stage {
+    /// The dataflow graph after translation from SQL.
+    Dataflow,
+    /// The dataflow graph after optimization in the coordinator.
+    Plan,
+    // FIXME: Add introspection into dataflow execution.
+}
+
+impl fmt::Display for Stage {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Stage::Dataflow => f.write_str("DATAFLOW"),
+            Stage::Plan => f.write_str("PLAN"),
+        }
+    }
+}
+
 /// A top-level statement (SELECT, INSERT, CREATE, etc.)
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -506,6 +525,8 @@ pub enum Statement {
     Peek { name: ObjectName, immediate: bool },
     /// `TAIL`
     Tail { name: ObjectName },
+    /// `EXPLAIN [ DATAFLOW | PLAN ] FOR`
+    Explain { stage: Stage, query: Box<Query> },
 }
 
 impl fmt::Display for Statement {
@@ -786,6 +807,9 @@ impl fmt::Display for Statement {
                 write!(f, "{}", name)
             }
             Statement::Tail { name } => write!(f, "TAIL {}", name),
+            Statement::Explain { stage, query } => {
+                write!(f, "EXPLAIN {} FOR {}", stage, query)
+            }
         }
     }
 }
