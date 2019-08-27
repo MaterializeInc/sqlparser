@@ -392,7 +392,7 @@ pub trait Visit<'ast> {
 
     fn visit_drop(
         &mut self,
-        object_type: &'ast ObjectType,
+        object_type: ObjectType,
         if_exists: bool,
         names: &'ast [ObjectName],
         cascade: bool,
@@ -400,7 +400,7 @@ pub trait Visit<'ast> {
         visit_drop(self, object_type, if_exists, names, cascade)
     }
 
-    fn visit_object_type(&mut self, _object_type: &'ast ObjectType) {}
+    fn visit_object_type(&mut self, _object_type: ObjectType) {}
 
     fn visit_alter_table(&mut self, name: &'ast ObjectName, operation: &'ast AlterTableOperation) {
         visit_alter_table(self, name, operation)
@@ -511,7 +511,7 @@ pub trait Visit<'ast> {
         visit_tail(self, name)
     }
 
-    fn visit_explain(&mut self, _stage: &'ast Stage, query: &'ast Query) {
+    fn visit_explain(&mut self, _stage: Stage, query: &'ast Query) {
         visit_query(self, query)
     }
 }
@@ -568,7 +568,7 @@ pub fn visit_statement<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, statement
             if_exists,
             names,
             cascade,
-        } => visitor.visit_drop(object_type, *if_exists, names, *cascade),
+        } => visitor.visit_drop(*object_type, *if_exists, names, *cascade),
         Statement::CreateTable {
             name,
             columns,
@@ -610,7 +610,7 @@ pub fn visit_statement<'ast, V: Visit<'ast> + ?Sized>(visitor: &mut V, statement
         Statement::Tail { name } => {
             visitor.visit_tail(name);
         }
-        Statement::Explain { stage, query } => visitor.visit_explain(stage, query),
+        Statement::Explain { stage, query } => visitor.visit_explain(*stage, query),
     }
 }
 
@@ -1205,7 +1205,7 @@ pub fn visit_create_sink<'ast, V: Visit<'ast> + ?Sized>(
 
 pub fn visit_drop<'ast, V: Visit<'ast> + ?Sized>(
     visitor: &mut V,
-    object_type: &'ast ObjectType,
+    object_type: ObjectType,
     _if_exists: bool,
     names: &'ast [ObjectName],
     _cascade: bool,

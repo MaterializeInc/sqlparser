@@ -807,9 +807,7 @@ impl fmt::Display for Statement {
                 write!(f, "{}", name)
             }
             Statement::Tail { name } => write!(f, "TAIL {}", name),
-            Statement::Explain { stage, query } => {
-                write!(f, "EXPLAIN {} FOR {}", stage, query)
-            }
+            Statement::Explain { stage, query } => write!(f, "EXPLAIN {} FOR {}", stage, query),
         }
     }
 }
