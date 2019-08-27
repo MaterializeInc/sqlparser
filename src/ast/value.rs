@@ -13,6 +13,22 @@
 use bigdecimal::BigDecimal;
 use std::fmt;
 
+mod datetime;
+pub use datetime::{
+    DateTimeField, Interval, IntervalValue, ParsedDate, ParsedDateTime, ParsedTimestamp,
+};
+
+#[derive(Debug)]
+pub struct ValueError(String);
+
+impl std::error::Error for ValueError {}
+
+impl fmt::Display for ValueError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 /// Primitive SQL values such as number and string
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Value {
@@ -29,14 +45,14 @@ pub enum Value {
     /// Boolean value true or false
     Boolean(bool),
     /// `DATE '...'` literals
-    Date(String),
+    Date(String, ParsedDate),
     /// `TIME '...'` literals
     Time(String),
     /// `TIMESTAMP '...'` literals
-    Timestamp(String),
+    Timestamp(String, ParsedTimestamp),
     /// INTERVAL literals, roughly in the following format:
     ///
-    /// ```ignore
+    /// ```text
     /// INTERVAL '<value>' <leading_field> [ (<leading_precision>) ]
     ///     [ TO <last_field> [ (<fractional_seconds_precision>) ] ]
     /// ```
@@ -45,47 +61,13 @@ pub enum Value {
     /// The parser does not validate the `<value>`, nor does it ensure
     /// that the `<leading_field>` units >= the units in `<last_field>`,
     /// so the user will have to reject intervals like `HOUR TO YEAR`.
-    Interval {
-        /// The raw [value] that was present in `INTERVAL '[value]'`
-        value: String,
-        /// The unit of the first field in the interval. `INTERVAL 'T' MINUTE`
-        /// means `T` is in minutes
-        leading_field: DateTimeField,
-        /// How many digits the leading field is allowed to occupy.
-        ///
-        /// The interval `INTERVAL '1234' MINUTE(3)` is **illegal**, but `INTERVAL
-        /// '123' MINUTE(3)` is fine.
-        ///
-        /// This parser does not do any validation that fields fit.
-        leading_precision: Option<u64>,
-        /// How much precision to keep track of
-        ///
-        /// If this is ommitted, then you are supposed to ignore all of the
-        /// non-lead fields. If it is less precise than the final field, you
-        /// are supposed to ignore the final field.
-        ///
-        /// For the following specifications:
-        ///
-        /// * `INTERVAL '1:1:1' HOURS TO SECONDS` the `last_field` gets
-        ///   `Some(DateTimeField::Second)` and interpreters should generate an
-        ///   interval equivalent to `3661` seconds.
-        /// * In `INTERVAL '1:1:1' HOURS` the `last_field` gets `None` and
-        ///   interpreters should generate an interval equivalent to `3600`
-        ///   seconds.
-        /// * In `INTERVAL '1:1:1' HOURS TO MINUTES` the interval should be
-        ///   equivalent to `3660` seconds.
-        last_field: Option<DateTimeField>,
-        /// The seconds precision can be specified in SQL source as
-        /// `INTERVAL '__' SECOND(_, x)` (in which case the `leading_field`
-        /// will be `Second` and the `last_field` will be `None`),
-        /// or as `__ TO SECOND(x)`.
-        fractional_seconds_precision: Option<u64>,
-    },
+    Interval(IntervalValue),
     /// `NULL` value
     Null,
 }
 
 impl fmt::Display for Value {
+    #[allow(clippy::unneeded_field_pattern)] // want to be warned if we add another field
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Value::Long(v) => write!(f, "{}", v),
@@ -94,16 +76,17 @@ impl fmt::Display for Value {
             Value::NationalStringLiteral(v) => write!(f, "N'{}'", v),
             Value::HexStringLiteral(v) => write!(f, "X'{}'", v),
             Value::Boolean(v) => write!(f, "{}", v),
-            Value::Date(v) => write!(f, "DATE '{}'", escape_single_quote_string(v)),
+            Value::Date(v, _) => write!(f, "DATE '{}'", escape_single_quote_string(v)),
             Value::Time(v) => write!(f, "TIME '{}'", escape_single_quote_string(v)),
-            Value::Timestamp(v) => write!(f, "TIMESTAMP '{}'", escape_single_quote_string(v)),
-            Value::Interval {
+            Value::Timestamp(v, _) => write!(f, "TIMESTAMP '{}'", escape_single_quote_string(v)),
+            Value::Interval(IntervalValue {
+                parsed: _,
                 value,
                 leading_field: DateTimeField::Second,
                 leading_precision: Some(leading_precision),
                 last_field,
                 fractional_seconds_precision: Some(fractional_seconds_precision),
-            } => {
+            }) => {
                 // When the leading field is SECOND, the parser guarantees that
                 // the last field is None.
                 assert!(last_field.is_none());
@@ -115,13 +98,14 @@ impl fmt::Display for Value {
                     fractional_seconds_precision
                 )
             }
-            Value::Interval {
+            Value::Interval(IntervalValue {
+                parsed: _,
                 value,
                 leading_field,
                 leading_precision,
                 last_field,
                 fractional_seconds_precision,
-            } => {
+            }) => {
                 write!(
                     f,
                     "INTERVAL '{}' {}",
@@ -144,29 +128,6 @@ impl fmt::Display for Value {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum DateTimeField {
-    Year,
-    Month,
-    Day,
-    Hour,
-    Minute,
-    Second,
-}
-
-impl fmt::Display for DateTimeField {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_str(match self {
-            DateTimeField::Year => "YEAR",
-            DateTimeField::Month => "MONTH",
-            DateTimeField::Day => "DAY",
-            DateTimeField::Hour => "HOUR",
-            DateTimeField::Minute => "MINUTE",
-            DateTimeField::Second => "SECOND",
-        })
-    }
-}
-
 pub struct EscapeSingleQuoteString<'a>(&'a str);
 
 impl<'a> fmt::Display for EscapeSingleQuoteString<'a> {
@@ -184,4 +145,40 @@ impl<'a> fmt::Display for EscapeSingleQuoteString<'a> {
 
 pub fn escape_single_quote_string(s: &str) -> EscapeSingleQuoteString<'_> {
     EscapeSingleQuoteString(s)
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    /// An extremely default interval value
+    fn ivalue() -> IntervalValue {
+        IntervalValue {
+            value: "".into(),
+            parsed: ParsedDateTime::default(),
+            leading_field: DateTimeField::Year,
+            leading_precision: None,
+            last_field: None,
+            fractional_seconds_precision: None,
+        }
+    }
+
+    #[test]
+    fn interval_values() {
+        let mut iv = ivalue();
+        iv.parsed.year = None;
+        match iv.computed_permissive() {
+            Err(ValueError { .. }) => {}
+            Ok(why) => panic!("should not be okay: {:?}", why),
+        }
+    }
+
+    #[test]
+    fn iterate_datetimefield() {
+        use DateTimeField::*;
+        assert_eq!(
+            Year.into_iter().take(10).collect::<Vec<_>>(),
+            vec![Month, Day, Hour, Minute, Second]
+        )
+    }
 }

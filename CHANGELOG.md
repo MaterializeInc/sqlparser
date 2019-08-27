@@ -8,6 +8,14 @@ Given that the parser produces a typed AST, any changes to the AST will technica
 ## [Unreleased]
 Nothing here yet! Check https://github.com/andygrove/sqlparser-rs/commits/master for undocumented changes.
 
+### Changed
+
+- Now supports parsing date and time types
+    - ast::Value::Interval changed its representation to include an inner
+      IntervalValue that includes a `ParsedDateTime` and some useful methods.
+    - ast::Value::Date changed its representation to include an inner
+      `ParsedDate`
+
 ## [0.4.0] - 2019-07-02
 This release brings us closer to SQL-92 support, mainly thanks to the improvements contributed back from @MaterializeInc's fork and other work by @benesch.
 
