@@ -16,6 +16,7 @@
 
 use sqlparser::ast::*;
 use sqlparser::dialect::{GenericDialect, PostgreSqlDialect};
+use sqlparser::parser::ParserError;
 use sqlparser::test_utils::*;
 
 #[test]
@@ -163,7 +164,7 @@ fn parse_create_table_with_defaults() {
                 vec![
                     SqlOption {
                         name: "fillfactor".into(),
-                        value: Value::Long(20)
+                        value: number("20")
                     },
                     SqlOption {
                         name: "user_catalog_table".into(),
@@ -171,7 +172,7 @@ fn parse_create_table_with_defaults() {
                     },
                     SqlOption {
                         name: "autovacuum_vacuum_threshold".into(),
-                        value: Value::Long(100)
+                        value: number("100")
                     },
                 ]
             );
@@ -279,7 +280,7 @@ fn parse_set() {
         Statement::SetVariable {
             local: false,
             variable: "a".into(),
-            value: SetVariableValue::Literal(Value::Long(0)),
+            value: SetVariableValue::Literal(number("0")),
         }
     );
 
@@ -305,6 +306,27 @@ fn parse_set() {
 
     pg_and_generic().one_statement_parses_to("SET a TO b", "SET a = b");
     pg_and_generic().one_statement_parses_to("SET SESSION a = b", "SET a = b");
+
+    assert_eq!(
+        pg_and_generic().parse_sql_statements("SET"),
+        Err(ParserError::ParserError(
+            "Expected identifier, found: EOF".to_string()
+        )),
+    );
+
+    assert_eq!(
+        pg_and_generic().parse_sql_statements("SET a b"),
+        Err(ParserError::ParserError(
+            "Expected equals sign or TO, found: b".to_string()
+        )),
+    );
+
+    assert_eq!(
+        pg_and_generic().parse_sql_statements("SET a ="),
+        Err(ParserError::ParserError(
+            "Expected variable value, found: EOF".to_string()
+        )),
+    );
 }
 
 #[test]
