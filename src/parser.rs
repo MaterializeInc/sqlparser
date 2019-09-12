@@ -670,11 +670,38 @@ impl Parser {
         };
 
         if let Some(op) = regular_binary_operator {
-            Ok(Expr::BinaryOp {
-                left: Box::new(expr),
-                op,
-                right: Box::new(self.parse_subexpr(precedence)?),
-            })
+            let any = self.parse_keyword("ANY");
+            let some = !any && self.parse_keyword("SOME");
+            let all = !any && !some && self.parse_keyword("ALL");
+            if any || some || all {
+                use BinaryOperator::*;
+                match op {
+                    Eq | NotEq | Gt | GtEq | Lt | LtEq => (),
+                    _ => self.expected("comparison operator", Some(tok))?,
+                }
+                self.expect_token(&Token::LParen)?;
+                let query = self.parse_query()?;
+                self.expect_token(&Token::RParen)?;
+                if any || some {
+                    Ok(Expr::Any{
+                        left: Box::new(expr),
+                        op,
+                        right: Box::new(query),
+                        some,
+                    })
+                } else {
+                    Ok(Expr::All{
+                        left: Box::new(expr),
+                        op,
+                        right: Box::new(query),
+                    })}
+            } else {
+                Ok(Expr::BinaryOp {
+                    left: Box::new(expr),
+                    op,
+                    right: Box::new(self.parse_subexpr(precedence)?),
+                })
+            }
         } else if let Token::Word(ref k) = tok {
             match k.keyword.as_ref() {
                 "IS" => {

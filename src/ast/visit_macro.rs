@@ -278,6 +278,14 @@ macro_rules! make_visitor {
                 visit_subquery(self, subquery)
             }
 
+            fn visit_any(&mut self, left: &'ast $($mut)* Expr, op: &'ast $($mut)* BinaryOperator, right: &'ast $($mut)* Query) {
+                visit_any(self, left, op, right)
+            }
+
+             fn visit_all(&mut self, left: &'ast $($mut)* Expr, op: &'ast $($mut)* BinaryOperator, right: &'ast $($mut)* Query) {
+                visit_all(self, left, op, right)
+            }
+
             fn visit_insert(
                 &mut self,
                 table_name: &'ast $($mut)* ObjectName,
@@ -888,6 +896,8 @@ macro_rules! make_visitor {
                 ),
                 Expr::Exists(query) => visitor.visit_exists(query),
                 Expr::Subquery(query) => visitor.visit_subquery(query),
+                Expr::Any{left, op, right, some: _} => visitor.visit_any(left, op, right),
+                Expr::All{left, op, right} => visitor.visit_all(left, op, right),
             }
         }
 
@@ -1087,6 +1097,14 @@ macro_rules! make_visitor {
 
         pub fn visit_subquery<'ast, V: $name<'ast> + ?Sized>(visitor: &mut V, subquery: &'ast $($mut)* Query) {
             visitor.visit_query(subquery)
+        }
+
+        pub fn visit_any<'ast, V: $name<'ast> + ?Sized>(visitor: &mut V, left: &'ast $($mut)* Expr, op: &'ast $($mut)* BinaryOperator, right: &'ast $($mut)* Query) {
+            visitor.visit_any(left, op, right)
+        }
+
+        pub fn visit_all<'ast, V: $name<'ast> + ?Sized>(visitor: &mut V, left: &'ast $($mut)* Expr, op: &'ast $($mut)* BinaryOperator, right: &'ast $($mut)* Query) {
+            visitor.visit_all(left, op, right)
         }
 
         pub fn visit_insert<'ast, V: $name<'ast> + ?Sized>(
