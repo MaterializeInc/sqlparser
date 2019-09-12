@@ -192,6 +192,19 @@ pub enum Expr {
     /// A parenthesized subquery `(SELECT ...)`, used in expression like
     /// `SELECT (subquery) AS x` or `WHERE (subquery) = x`
     Subquery(Box<Query>),
+    /// `<expr> <op> ANY/SOME (<query>)`
+    Any {
+        left: Box<Expr>,
+        op: BinaryOperator,
+        right: Box<Query>,
+        some: bool, // just tracks which syntax was used
+    },
+    /// `<expr> <op> ALL (<query>)`
+    All {
+        left: Box<Expr>,
+        op:  BinaryOperator,
+        right: Box<Query>,
+    }
 }
 
 impl fmt::Display for Expr {
@@ -267,6 +280,8 @@ impl fmt::Display for Expr {
             }
             Expr::Exists(s) => write!(f, "EXISTS ({})", s),
             Expr::Subquery(s) => write!(f, "({})", s),
+            Expr::Any{left, op, right, some} => write!(f, "{} {} {} ({})", left, op, if *some { "SOME" } else { "ANY" }, right),
+            Expr::All{left, op, right} => write!(f, "{} {} ALL ({})", left, op, right),
         }
     }
 }

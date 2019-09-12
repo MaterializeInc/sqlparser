@@ -2416,6 +2416,55 @@ fn parse_scalar_subqueries() {
 }
 
 #[test]
+fn parse_any_some_all() {
+    let sql = "1 < ANY (SELECT 2)";
+    assert_matches!(verified_expr(sql), Expr::Any {
+        op: BinaryOperator::Lt, ..
+        //left: box Expr,
+        //right: box Query { .. },
+    });
+
+    let sql = "1 < SOME (SELECT 2)";
+    assert_matches!(verified_expr(sql), Expr::Any {
+        op: BinaryOperator::Lt, ..
+        //left: box Expr,
+        //right: box Query { .. },
+    });
+
+    let sql = "1 < ALL (SELECT 2)";
+    assert_matches!(verified_expr(sql), Expr::All {
+        op: BinaryOperator::Lt, ..
+        //left: box Expr,
+        //right: box Query { .. },
+    });
+
+    let res = parse_sql_statements("SELECT 1 WHERE 1 < ANY SELECT 2");
+    assert_eq!(
+        ParserError::ParserError("Expected (, found: SELECT".to_string()),
+        res.unwrap_err()
+    );
+
+    let res = parse_sql_statements("SELECT 1 WHERE 1 < NONE (SELECT 2)");
+    assert_eq!(
+        // TODO this is a pretty unhelpful error - it started parsing "NONE (SELECT" as applying the function NONE to the argument SELECT
+        ParserError::ParserError("Expected ), found: 2".to_string()),
+        res.unwrap_err()
+    );
+
+    let res = parse_sql_statements("SELECT 1 WHERE 1 < ANY (SELECT 2");
+    assert_eq!(
+        ParserError::ParserError("Expected ), found: EOF".to_string()),
+        res.unwrap_err()
+    );
+
+    let res = parse_sql_statements("SELECT 1 WHERE 1 + ANY (SELECT 2)");
+    assert_eq!(
+        ParserError::ParserError("Expected comparison operator, found: +".to_string()),
+        res.unwrap_err()
+    );
+}
+
+#[test]
 fn parse_exists_subquery() {
     let expected_inner = verified_query("SELECT 1");
     let sql = "SELECT * FROM t WHERE EXISTS (SELECT 1)";
