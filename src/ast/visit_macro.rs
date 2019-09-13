@@ -1100,11 +1100,15 @@ macro_rules! make_visitor {
         }
 
         pub fn visit_any<'ast, V: $name<'ast> + ?Sized>(visitor: &mut V, left: &'ast $($mut)* Expr, op: &'ast $($mut)* BinaryOperator, right: &'ast $($mut)* Query) {
-            visitor.visit_any(left, op, right)
+            visitor.visit_expr(left);
+            visitor.visit_binary_operator(op);
+            visitor.visit_query(right);
         }
 
         pub fn visit_all<'ast, V: $name<'ast> + ?Sized>(visitor: &mut V, left: &'ast $($mut)* Expr, op: &'ast $($mut)* BinaryOperator, right: &'ast $($mut)* Query) {
-            visitor.visit_all(left, op, right)
+            visitor.visit_expr(left);
+            visitor.visit_binary_operator(op);
+            visitor.visit_query(right);
         }
 
         pub fn visit_insert<'ast, V: $name<'ast> + ?Sized>(
