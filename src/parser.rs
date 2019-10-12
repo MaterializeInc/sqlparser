@@ -1910,6 +1910,10 @@ impl Parser {
                     ),
                 },
             })
+        } else if self.parse_keywords(vec!["CREATE", "VIEW"]) {
+            Ok(Statement::ShowCreateView {
+                view_name: self.parse_object_name()?,
+            })
         } else {
             Ok(Statement::ShowVariable {
                 variable: self.parse_identifier()?,

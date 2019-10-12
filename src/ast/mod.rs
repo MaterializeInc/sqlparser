@@ -549,6 +549,10 @@ pub enum Statement {
         table_name: ObjectName,
         filter: Option<ShowStatementFilter>,
     },
+    /// `SHOW CREATE VIEW <view>`
+    ShowCreateView {
+        view_name: ObjectName,
+    },
     /// `{ BEGIN [ TRANSACTION | WORK ] | START TRANSACTION } ...`
     StartTransaction { modes: Vec<TransactionMode> },
     /// `SET TRANSACTION ...`
@@ -814,6 +818,12 @@ impl fmt::Display for Statement {
                     write!(f, " {}", filter)?;
                 }
                 Ok(())
+            }
+            Statement::ShowCreateView {
+                view_name,
+            } => {
+                f.write_str("SHOW CREATE VIEW ")?;
+                write!(f, "{}", view_name)
             }
             Statement::StartTransaction { modes } => {
                 write!(f, "START TRANSACTION")?;

@@ -1869,6 +1869,14 @@ fn parse_show_objects() {
 }
 
 #[test]
+fn parse_show_create_view() {
+    assert_eq!(
+        verified_stmt("SHOW CREATE VIEW foo"),
+        Statement::ShowCreateView { view_name: ObjectName(vec!["foo".into()]) }
+    )
+}
+
+#[test]
 fn parse_simple_case_expr() {
     // ANSI calls a CASE expression with an operand "<simple case>"
     let sql = "SELECT CASE foo WHEN 1 THEN 'Y' ELSE 'N' END";
