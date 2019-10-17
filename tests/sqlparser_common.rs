@@ -1872,7 +1872,9 @@ fn parse_show_objects() {
 fn parse_show_create_view() {
     assert_eq!(
         verified_stmt("SHOW CREATE VIEW foo"),
-        Statement::ShowCreateView { view_name: ObjectName(vec!["foo".into()]) }
+        Statement::ShowCreateView {
+            view_name: ObjectName(vec!["foo".into()])
+        }
     )
 }
 
@@ -2712,6 +2714,103 @@ fn parse_create_sink() {
 }
 
 #[test]
+fn parse_create_index() {
+    let sql = "CREATE INDEX foo ON myschema.bar (a, b)";
+    match verified_stmt(sql) {
+        Statement::CreateIndex {
+            name,
+            on_name,
+            key_parts,
+        } => {
+            assert_eq!("foo", name.to_string());
+            assert_eq!("myschema.bar", on_name.to_string());
+            assert_eq!(
+                key_parts,
+                vec![
+                    Expr::Identifier("a".to_string()),
+                    Expr::Identifier("b".to_string())
+                ]
+            );
+        }
+        _ => assert!(false),
+    }
+
+    let sql = "CREATE INDEX fizz ON baz (ascii(x), a IS NOT NULL, (EXISTS (SELECT y FROM boop WHERE boop.z = z)), delta)";
+    match verified_stmt(sql) {
+        Statement::CreateIndex {
+            name,
+            on_name,
+            key_parts,
+        } => {
+            assert_eq!("fizz", name.to_string());
+            assert_eq!("baz", on_name.to_string());
+            assert_matches!(key_parts[0], Expr::Function(..));
+            assert_eq!(
+                key_parts[1],
+                Expr::IsNotNull(Box::new(Expr::Identifier("a".to_string())))
+            );
+            if let Expr::Nested(expr) = &key_parts[2] {
+                assert_matches!(**expr, Expr::Exists(..));
+            } else {
+                assert!(false);
+            }
+            assert_eq!(key_parts[3], Expr::Identifier("delta".to_string()));
+        }
+        _ => assert!(false),
+    }
+
+    let sql = "CREATE INDEX ind ON tab ((col + 1))";
+    match verified_stmt(sql) {
+        Statement::CreateIndex {
+            name,
+            on_name,
+            key_parts,
+        } => {
+            assert_eq!("ind", name.to_string());
+            assert_eq!("tab", on_name.to_string());
+            assert_eq!(
+                key_parts,
+                vec![Expr::Nested(Box::new(Expr::BinaryOp {
+                    left: Box::new(Expr::Identifier("col".to_string())),
+                    op: BinaryOperator::Plus,
+                    right: Box::new(Expr::Value(Value::Number("1".to_string())))
+                }))],
+            );
+        }
+        _ => assert!(false),
+    }
+    let sql = "CREATE INDEX qualifiers ON no_parentheses (alpha.omega)";
+    match verified_stmt(sql) {
+        Statement::CreateIndex {
+            name,
+            on_name,
+            key_parts,
+        } => {
+            assert_eq!("qualifiers", name.to_string());
+            assert_eq!("no_parentheses", on_name.to_string());
+            assert_eq!(
+                key_parts,
+                vec![Expr::CompoundIdentifier(vec![
+                    "alpha".to_string(),
+                    "omega".to_string()
+                ])],
+            );
+        }
+        _ => assert!(false),
+    }
+}
+
+#[test]
+fn parse_invalid_create_index() {
+    // Index names should not have a schema in front of it
+    let res = parse_sql_statements("CREATE INDEX myschema.ind ON foo(b)");
+    assert_eq!(
+        ParserError::ParserError("Expected ON, found: .".to_string()),
+        res.unwrap_err(),
+    );
+}
+
+#[test]
 fn parse_drop_table() {
     let sql = "DROP TABLE foo";
     match verified_stmt(sql) {
@@ -2798,6 +2897,28 @@ fn parse_drop_source() {
                 names.iter().map(|n| n.to_string()).collect::<Vec<_>>()
             );
             assert_eq!(false, cascade);
+        }
+        _ => unreachable!(),
+    }
+}
+
+#[test]
+fn parse_drop_index() {
+    let sql = "DROP INDEX IF EXISTS myschema.myindex";
+    match verified_stmt(sql) {
+        Statement::Drop {
+            object_type,
+            if_exists,
+            names,
+            cascade,
+        } => {
+            assert_eq!(true, if_exists);
+            assert_eq!(
+                vec!["myschema.myindex"],
+                names.iter().map(|n| n.to_string()).collect::<Vec<_>>()
+            );
+            assert_eq!(false, cascade);
+            assert_eq!(ObjectType::Index, object_type);
         }
         _ => unreachable!(),
     }

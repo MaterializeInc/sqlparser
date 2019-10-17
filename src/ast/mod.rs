@@ -499,6 +499,15 @@ pub enum Statement {
         file_format: Option<FileFormat>,
         location: Option<String>,
     },
+    /// `CREATE INDEX`
+    CreateIndex {
+        /// Index name
+        name: Ident,
+        /// `ON` table or view name
+        on_name: ObjectName,
+        /// Expressions that form part of the index key
+        key_parts: Vec<Expr>,
+    },
     /// `ALTER TABLE`
     AlterTable {
         /// Table name
@@ -759,6 +768,20 @@ impl fmt::Display for Statement {
                 }
                 Ok(())
             }
+            Statement::CreateIndex {
+                name,
+                on_name,
+                key_parts,
+            } => {
+                write!(
+                    f,
+                    "CREATE INDEX {} ON {} ({})",
+                    name,
+                    on_name,
+                    display_comma_separated(key_parts),
+                )?;
+                Ok(())
+            }
             Statement::AlterTable { name, operation } => {
                 write!(f, "ALTER TABLE {} {}", name, operation)
             }
@@ -797,6 +820,7 @@ impl fmt::Display for Statement {
                         View => "VIEWS",
                         Source => "SOURCES",
                         Sink => "SINKS",
+                        Index => unreachable!(),
                     }
                 )
             }
@@ -963,6 +987,7 @@ pub enum ObjectType {
     View,
     Source,
     Sink,
+    Index,
 }
 
 impl fmt::Display for ObjectType {
@@ -972,6 +997,7 @@ impl fmt::Display for ObjectType {
             ObjectType::View => "VIEW",
             ObjectType::Source => "SOURCE",
             ObjectType::Sink => "SINK",
+            ObjectType::Index => "INDEX",
         })
     }
 }

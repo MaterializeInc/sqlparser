@@ -1055,9 +1055,11 @@ impl Parser {
             self.parse_create_sink()
         } else if self.parse_keyword("EXTERNAL") {
             self.parse_create_external_table()
+        } else if self.parse_keyword("INDEX") {
+            self.parse_create_index()
         } else {
             self.expected(
-                "TABLE, VIEW, SOURCE, or SINK after CREATE",
+                "TABLE, VIEW, SOURCE, SINK, or INDEX after CREATE",
                 self.peek_token(),
             )
         }
@@ -1163,6 +1165,20 @@ impl Parser {
         })
     }
 
+    pub fn parse_create_index(&mut self) -> Result<Statement, ParserError> {
+        let name = self.parse_identifier()?;
+        self.expect_keyword("ON")?;
+        let on_name = self.parse_object_name()?;
+        self.expect_token(&Token::LParen)?;
+        let key_parts = self.parse_comma_separated(Parser::parse_expr)?;
+        self.expect_token(&Token::RParen)?;
+        Ok(Statement::CreateIndex {
+            name,
+            on_name,
+            key_parts,
+        })
+    }
+
     pub fn parse_drop(&mut self) -> Result<Statement, ParserError> {
         let object_type = if self.parse_keyword("TABLE") {
             ObjectType::Table
@@ -1172,8 +1188,13 @@ impl Parser {
             ObjectType::Source
         } else if self.parse_keywords(vec!["SINK"]) {
             ObjectType::Sink
+        } else if self.parse_keyword("INDEX") {
+            ObjectType::Index
         } else {
-            return self.expected("TABLE or VIEW after DROP", self.peek_token());
+            return self.expected(
+                "TABLE, VIEW, SOURCE, SINK, or INDEX after DROP",
+                self.peek_token(),
+            );
         };
         // Many dialects support the non standard `IF EXISTS` clause and allow
         // specifying multiple objects to delete in a single statement

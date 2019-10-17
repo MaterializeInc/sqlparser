@@ -382,6 +382,15 @@ macro_rules! make_visitor {
                 visit_create_view(self, name, columns, query, materialized, with_options)
             }
 
+            fn visit_create_index(
+                &mut self,
+                name: &'ast $($mut)* Ident,
+                on_name: &'ast $($mut)* ObjectName,
+                key_parts: &'ast $($mut)* Vec<Expr>
+            ){
+                visit_create_index(self, name, on_name, key_parts)
+            }
+
             fn visit_create_table(
                 &mut self,
                 name: &'ast $($mut)* ObjectName,
@@ -602,6 +611,11 @@ macro_rules! make_visitor {
                     materialized,
                     with_options,
                 } => visitor.visit_create_view(name, columns, query, *materialized, with_options),
+                Statement::CreateIndex {
+                    name,
+                    on_name,
+                    key_parts,
+                } => visitor.visit_create_index(name, on_name, key_parts),
                 Statement::Drop {
                     object_type,
                     if_exists,
@@ -1286,6 +1300,19 @@ macro_rules! make_visitor {
                 visitor.visit_option(option);
             }
             visitor.visit_query(query);
+        }
+
+        pub fn visit_create_index<'ast, V: $name<'ast> + ?Sized>(
+            visitor: &mut V,
+            name: &'ast $($mut)* Ident,
+            on_name: &'ast $($mut)* ObjectName,
+            key_parts: &'ast $($mut)* Vec<Expr>,
+        ) {
+            visitor.visit_ident(name);
+            visitor.visit_object_name(on_name);
+            for key_part in key_parts {
+                visitor.visit_expr(key_part);
+            }
         }
 
         pub fn visit_create_table<'ast, V: $name<'ast> + ?Sized>(

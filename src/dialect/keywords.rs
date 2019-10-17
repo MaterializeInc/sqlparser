@@ -203,6 +203,7 @@ define_keywords!(
     IF,
     IMMEDIATE,
     IN,
+    INDEX,
     INDICATOR,
     INNER,
     INOUT,
