@@ -180,6 +180,7 @@ define_keywords!(
     FIRST_VALUE,
     FLOAT,
     FLOOR,
+    FLUSH,
     FOLLOWING,
     FOR,
     FOREIGN,
