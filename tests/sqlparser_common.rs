@@ -3320,6 +3320,23 @@ fn parse_explain() {
     );
 }
 
+#[test]
+fn parse_flush() {
+    let ast = verified_stmt("FLUSH ALL SOURCES");
+    assert_eq!(
+        ast,
+        Statement::FlushAllSources,
+    );
+
+    let ast = verified_stmt("FLUSH SOURCE foo");
+    assert_eq!(
+        ast,
+        Statement::FlushSource {
+            name: ObjectName(vec![Ident::new("foo")])
+        }
+    );
+}
+
 fn parse_sql_statements(sql: &str) -> Result<Vec<Statement>, ParserError> {
     all_dialects().parse_sql_statements(sql)
 }
