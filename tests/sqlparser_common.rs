@@ -2743,8 +2743,8 @@ fn parse_create_index() {
             assert_eq!(
                 key_parts,
                 vec![
-                    Expr::Identifier("a".to_string()),
-                    Expr::Identifier("b".to_string())
+                    Expr::Identifier(Ident::new("a")),
+                    Expr::Identifier(Ident::new("b"))
                 ]
             );
         }
@@ -2763,14 +2763,14 @@ fn parse_create_index() {
             assert_matches!(key_parts[0], Expr::Function(..));
             assert_eq!(
                 key_parts[1],
-                Expr::IsNotNull(Box::new(Expr::Identifier("a".to_string())))
+                Expr::IsNotNull(Box::new(Expr::Identifier(Ident::new("a"))))
             );
             if let Expr::Nested(expr) = &key_parts[2] {
                 assert_matches!(**expr, Expr::Exists(..));
             } else {
                 assert!(false);
             }
-            assert_eq!(key_parts[3], Expr::Identifier("delta".to_string()));
+            assert_eq!(key_parts[3], Expr::Identifier(Ident::new("delta")));
         }
         _ => assert!(false),
     }
@@ -2787,7 +2787,7 @@ fn parse_create_index() {
             assert_eq!(
                 key_parts,
                 vec![Expr::Nested(Box::new(Expr::BinaryOp {
-                    left: Box::new(Expr::Identifier("col".to_string())),
+                    left: Box::new(Expr::Identifier(Ident::new("col"))),
                     op: BinaryOperator::Plus,
                     right: Box::new(Expr::Value(Value::Number("1".to_string())))
                 }))],
@@ -2807,8 +2807,8 @@ fn parse_create_index() {
             assert_eq!(
                 key_parts,
                 vec![Expr::CompoundIdentifier(vec![
-                    "alpha".to_string(),
-                    "omega".to_string()
+                    Ident::new("alpha"),
+                    Ident::new("omega"),
                 ])],
             );
         }

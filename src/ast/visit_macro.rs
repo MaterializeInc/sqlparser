@@ -1624,22 +1624,22 @@ mod tests {
     #[test]
     fn test_basic_visitor() -> Result<(), Box<dyn Error>> {
         struct Visitor<'a> {
-            seen_idents: Vec<&'a Ident>,
+            seen_idents: Vec<&'a str>,
         }
 
         impl<'a> Visit<'a> for Visitor<'a> {
             fn visit_ident(&mut self, ident: &'a Ident) {
-                self.seen_idents.push(ident);
+                self.seen_idents.push(&ident.value);
             }
         }
 
         struct VisitorMut<'a> {
-            seen_idents: Vec<&'a mut Ident>,
+            seen_idents: Vec<&'a str>,
         }
 
         impl<'a> VisitMut<'a> for VisitorMut<'a> {
             fn visit_ident(&mut self, ident: &'a mut Ident) {
-                self.seen_idents.push(ident);
+                self.seen_idents.push(&ident.value);
             }
         }
 
