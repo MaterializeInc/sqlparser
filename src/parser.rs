@@ -1541,15 +1541,19 @@ impl Parser {
                 "UUID" => Ok(DataType::Uuid),
                 "DATE" => Ok(DataType::Date),
                 "TIMESTAMP" => {
-                    // TBD: we throw away "with/without timezone" information
-                    if self.parse_keyword("WITH") || self.parse_keyword("WITHOUT") {
+                    if self.parse_keyword("WITH") {
+                        self.expect_keywords(&["TIME", "ZONE"])?;
+                        return Ok(DataType::TimestampTz)
+                    } else if self.parse_keyword("WITHOUT") {
                         self.expect_keywords(&["TIME", "ZONE"])?;
                     }
                     Ok(DataType::Timestamp)
                 }
                 "TIME" => {
-                    // TBD: we throw away "with/without timezone" information
-                    if self.parse_keyword("WITH") || self.parse_keyword("WITHOUT") {
+                    if self.parse_keyword("WITH") {
+                        self.expect_keywords(&["TIME", "ZONE"])?;
+                        return Ok(DataType::TimeTz)
+                    } else if self.parse_keyword("WITHOUT") {
                         self.expect_keywords(&["TIME", "ZONE"])?;
                     }
                     Ok(DataType::Time)

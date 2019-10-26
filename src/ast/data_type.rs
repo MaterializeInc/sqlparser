@@ -48,10 +48,14 @@ pub enum DataType {
     Boolean,
     /// Date
     Date,
-    /// Time
+    /// Time without time zone
     Time,
-    /// Timestamp
+    /// Time with time zone
+    TimeTz,
+    /// Timestamp without time zone
     Timestamp,
+    /// Timestamp with time zone
+    TimestampTz,
     /// Interval
     Interval,
     /// Regclass used in postgresql serial
@@ -94,7 +98,9 @@ impl fmt::Display for DataType {
             DataType::Boolean => write!(f, "boolean"),
             DataType::Date => write!(f, "date"),
             DataType::Time => write!(f, "time"),
+            DataType::TimeTz => write!(f, "time with time zone"),
             DataType::Timestamp => write!(f, "timestamp"),
+            DataType::TimestampTz => write!(f, "timestamp with time zone"),
             DataType::Interval => write!(f, "interval"),
             DataType::Regclass => write!(f, "regclass"),
             DataType::Text => write!(f, "text"),

@@ -31,6 +31,7 @@ fn parse_create_table_with_defaults() {
             activebool boolean DEFAULT true NOT NULL,
             create_date date DEFAULT now()::text NOT NULL,
             last_update timestamp without time zone DEFAULT now() NOT NULL,
+            last_update_tz timestamp with time zone,
             active integer NOT NULL
     ) WITH (fillfactor = 20, user_catalog_table = true, autovacuum_vacuum_threshold = 100)";
     match pg_and_generic().one_statement_parses_to(sql, "") {
@@ -146,6 +147,12 @@ fn parse_create_table_with_defaults() {
                                 option: ColumnOption::NotNull,
                             }
                         ],
+                    },
+                    ColumnDef {
+                        name: "last_update_tz".into(),
+                        data_type: DataType::TimestampTz,
+                        collation: None,
+                        options: vec![],
                     },
                     ColumnDef {
                         name: "active".into(),
