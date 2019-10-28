@@ -365,6 +365,46 @@ fn parse_select_count_distinct() {
 }
 
 #[test]
+fn parse_parameters() {
+    let select = verified_only_select("SELECT $1");
+    assert_eq!(
+        &Expr::Parameter(1),
+        expr_from_projection(only(&select.projection)),
+    );
+
+    assert_eq!(
+        Expr::BinaryOp {
+            left: Box::new(Expr::Parameter(91)),
+            op: BinaryOperator::Plus,
+            right: Box::new(Expr::Parameter(42)),
+        },
+        verified_expr("$91 + $42"),
+    );
+
+    let res = parse_sql_statements("SELECT $q");
+    assert_eq!(
+        ParserError::TokenizerError(
+            "parameter marker ($) was not followed by at least one digit".into()
+        ),
+        res.unwrap_err()
+    );
+
+    let res = parse_sql_statements("SELECT $1$2");
+    assert_eq!(
+        ParserError::ParserError("Expected end of statement, found: $2".into()),
+        res.unwrap_err()
+    );
+
+    let res = parse_sql_statements(&format!("SELECT $18446744073709551616"));
+    assert_eq!(
+        ParserError::ParserError(
+            "unable to parse parameter: number too large to fit in target type".into(),
+        ),
+        res.unwrap_err()
+    );
+}
+
+#[test]
 fn parse_not() {
     let sql = "SELECT id FROM customer WHERE NOT salary = ''";
     let _ast = verified_only_select(sql);
@@ -3323,10 +3363,7 @@ fn parse_explain() {
 #[test]
 fn parse_flush() {
     let ast = verified_stmt("FLUSH ALL SOURCES");
-    assert_eq!(
-        ast,
-        Statement::FlushAllSources,
-    );
+    assert_eq!(ast, Statement::FlushAllSources,);
 
     let ast = verified_stmt("FLUSH SOURCE foo");
     assert_eq!(

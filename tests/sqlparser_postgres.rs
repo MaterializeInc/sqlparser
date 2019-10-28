@@ -232,6 +232,7 @@ fn parse_create_table_with_inherit() {
     pg().verified_stmt(sql);
 }
 
+#[ignore] // NOTE(benesch): this test is doomed. COPY data should not be tokenized/parsed.
 #[test]
 fn parse_copy_example() {
     let sql = r#"COPY public.actor (actor_id, first_name, last_name, last_update, value) FROM stdin;
