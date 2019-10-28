@@ -21,6 +21,7 @@ use std::str::Chars;
 
 use super::dialect::keywords::ALL_KEYWORDS;
 use super::dialect::Dialect;
+use std::error::Error;
 use std::fmt;
 
 /// SQL Token enumeration
@@ -38,6 +39,10 @@ pub enum Token {
     NationalStringLiteral(String),
     /// Hexadecimal string literal: i.e.: X'deadbeef'
     HexStringLiteral(String),
+    /// An unsigned numeric literal representing positional
+    /// parameters like $1, $2, etc. in prepared statements and
+    /// function definitions
+    Parameter(String),
     /// Comma
     Comma,
     /// Whitespace (space, tab, etc)
@@ -99,6 +104,7 @@ impl fmt::Display for Token {
             Token::SingleQuotedString(ref s) => write!(f, "'{}'", s),
             Token::NationalStringLiteral(ref s) => write!(f, "N'{}'", s),
             Token::HexStringLiteral(ref s) => write!(f, "X'{}'", s),
+            Token::Parameter(n) => write!(f, "${}", n),
             Token::Comma => f.write_str(","),
             Token::Whitespace(ws) => write!(f, "{}", ws),
             Token::Eq => f.write_str("="),
@@ -212,6 +218,14 @@ impl fmt::Display for Whitespace {
 #[derive(Debug, PartialEq)]
 pub struct TokenizerError(String);
 
+impl fmt::Display for TokenizerError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl Error for TokenizerError {}
+
 /// SQL Tokenizer
 pub struct Tokenizer<'a> {
     dialect: &'a dyn Dialect,
@@ -249,6 +263,7 @@ impl<'a> Tokenizer<'a> {
                 Token::Word(w) if w.quote_style != None => self.col += w.value.len() as u64 + 2,
                 Token::Number(s) => self.col += s.len() as u64,
                 Token::SingleQuotedString(s) => self.col += s.len() as u64,
+                Token::Parameter(s) => self.col += s.len() as u64,
                 _ => self.col += 1,
             }
 
@@ -415,6 +430,7 @@ impl<'a> Tokenizer<'a> {
                 '&' => self.consume_and_return(chars, Token::Ampersand),
                 '{' => self.consume_and_return(chars, Token::LBrace),
                 '}' => self.consume_and_return(chars, Token::RBrace),
+                '$' => self.tokenize_parameter(chars),
                 other => self.consume_and_return(chars, Token::Char(other)),
             },
             None => Ok(None),
@@ -488,6 +504,31 @@ impl<'a> Tokenizer<'a> {
                 }
             }
         }
+    }
+
+    /// PostgreSQL supports positional parameters (like $1, $2, etc.) for
+    /// prepared statements and function definitions.
+    /// Grab the positional argument following a $ to parse it.
+    fn tokenize_parameter(
+        &self,
+        chars: &mut Peekable<Chars<'_>>,
+    ) -> Result<Option<Token>, TokenizerError> {
+        assert_eq!(Some('$'), chars.next());
+
+        let n = peeking_take_while(chars, |ch| match ch {
+            '0'..='9' => true,
+            _ => false,
+        });
+
+        if n.is_empty() {
+            return Err(TokenizerError(
+                "parameter marker ($) was not followed by \
+                 at least one digit"
+                    .into(),
+            ));
+        }
+
+        Ok(Some(Token::Parameter(n)))
     }
 
     fn consume_and_return(

@@ -177,6 +177,8 @@ pub enum Expr {
     QualifiedWildcard(Vec<Ident>),
     /// Multi-part identifier, e.g. `table_alias.column` or `schema.table.col`
     CompoundIdentifier(Vec<Ident>),
+    /// A positional parameter, e.g., `$1` or `$42`
+    Parameter(usize),
     /// `IS NULL` expression
     IsNull(Box<Expr>),
     /// `IS NOT NULL` expression
@@ -255,9 +257,9 @@ pub enum Expr {
     /// `<expr> <op> ALL (<query>)`
     All {
         left: Box<Expr>,
-        op:  BinaryOperator,
+        op: BinaryOperator,
         right: Box<Query>,
-    }
+    },
 }
 
 impl fmt::Display for Expr {
@@ -267,6 +269,7 @@ impl fmt::Display for Expr {
             Expr::Wildcard => f.write_str("*"),
             Expr::QualifiedWildcard(q) => write!(f, "{}.*", display_separated(q, ".")),
             Expr::CompoundIdentifier(s) => write!(f, "{}", display_separated(s, ".")),
+            Expr::Parameter(n) => write!(f, "${}", n),
             Expr::IsNull(ast) => write!(f, "{} IS NULL", ast),
             Expr::IsNotNull(ast) => write!(f, "{} IS NOT NULL", ast),
             Expr::InList {
@@ -333,8 +336,20 @@ impl fmt::Display for Expr {
             }
             Expr::Exists(s) => write!(f, "EXISTS ({})", s),
             Expr::Subquery(s) => write!(f, "({})", s),
-            Expr::Any{left, op, right, some} => write!(f, "{} {} {} ({})", left, op, if *some { "SOME" } else { "ANY" }, right),
-            Expr::All{left, op, right} => write!(f, "{} {} ALL ({})", left, op, right),
+            Expr::Any {
+                left,
+                op,
+                right,
+                some,
+            } => write!(
+                f,
+                "{} {} {} ({})",
+                left,
+                op,
+                if *some { "SOME" } else { "ANY" },
+                right
+            ),
+            Expr::All { left, op, right } => write!(f, "{} {} ALL ({})", left, op, right),
         }
     }
 }
@@ -532,9 +547,7 @@ pub enum Statement {
         with_options: Vec<SqlOption>,
     },
     /// `FLUSH SOURCE`
-    FlushSource {
-        name: ObjectName
-    },
+    FlushSource { name: ObjectName },
     /// `FLUSH ALL SOURCES`
     FlushAllSources,
     /// `CREATE VIEW`
@@ -618,9 +631,7 @@ pub enum Statement {
         filter: Option<ShowStatementFilter>,
     },
     /// `SHOW CREATE VIEW <view>`
-    ShowCreateView {
-        view_name: ObjectName,
-    },
+    ShowCreateView { view_name: ObjectName },
     /// `{ BEGIN [ TRANSACTION | WORK ] | START TRANSACTION } ...`
     StartTransaction { modes: Vec<TransactionMode> },
     /// `SET TRANSACTION ...`
@@ -902,9 +913,7 @@ impl fmt::Display for Statement {
                 }
                 Ok(())
             }
-            Statement::ShowCreateView {
-                view_name,
-            } => {
+            Statement::ShowCreateView { view_name } => {
                 f.write_str("SHOW CREATE VIEW ")?;
                 write!(f, "{}", view_name)
             }

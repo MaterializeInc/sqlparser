@@ -186,6 +186,8 @@ macro_rules! make_visitor {
                 visit_qualified_wildcard(self, idents)
             }
 
+            fn visit_parameter(&mut self, _n: usize) {}
+
             fn visit_is_null(&mut self, expr: &'ast $($mut)* Expr) {
                 visit_is_null(self, expr)
             }
@@ -887,6 +889,7 @@ macro_rules! make_visitor {
                 Expr::Wildcard => visitor.visit_wildcard(),
                 Expr::QualifiedWildcard(idents) => visitor.visit_qualified_wildcard(idents),
                 Expr::CompoundIdentifier(idents) => visitor.visit_compound_identifier(idents),
+                Expr::Parameter(n) => visitor.visit_parameter(*n),
                 Expr::IsNull(expr) => visitor.visit_is_null(expr),
                 Expr::IsNotNull(expr) => visitor.visit_is_not_null(expr),
                 Expr::InList {
@@ -969,6 +972,13 @@ macro_rules! make_visitor {
             for ident in idents {
                 visitor.visit_ident(ident);
             }
+        }
+
+        pub fn visit_parameter<'ast, V: $name<'ast> + ?Sized>(
+            visitor: &mut V,
+            n: usize,
+        ) {
+            visitor.visit_parameter(n)
         }
 
         pub fn visit_is_null<'ast, V: $name<'ast> + ?Sized>(visitor: &mut V, expr: &'ast $($mut)* Expr) {

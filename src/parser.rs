@@ -56,7 +56,7 @@ use IsLateral::*;
 
 impl From<TokenizerError> for ParserError {
     fn from(e: TokenizerError) -> Self {
-        ParserError::TokenizerError(format!("{:?}", e))
+        ParserError::TokenizerError(format!("{}", e))
     }
 }
 
@@ -263,6 +263,10 @@ impl Parser {
                 self.prev_token();
                 Ok(Expr::Value(self.parse_value()?))
             }
+            Token::Parameter(s) => Ok(Expr::Parameter(match s.parse() {
+                Ok(n) => n,
+                Err(err) => return parser_err!("unable to parse parameter: {}", err),
+            })),
             Token::LParen => {
                 let expr = if self.parse_keyword("SELECT") || self.parse_keyword("WITH") {
                     self.prev_token();
@@ -684,18 +688,19 @@ impl Parser {
                 let query = self.parse_query()?;
                 self.expect_token(&Token::RParen)?;
                 if any || some {
-                    Ok(Expr::Any{
+                    Ok(Expr::Any {
                         left: Box::new(expr),
                         op,
                         right: Box::new(query),
                         some,
                     })
                 } else {
-                    Ok(Expr::All{
+                    Ok(Expr::All {
                         left: Box::new(expr),
                         op,
                         right: Box::new(query),
-                    })}
+                    })
+                }
             } else {
                 Ok(Expr::BinaryOp {
                     left: Box::new(expr),
@@ -2395,7 +2400,7 @@ impl Parser {
             Ok(Statement::FlushAllSources)
         } else if self.parse_keyword("SOURCE") {
             Ok(Statement::FlushSource {
-                name: self.parse_object_name()?
+                name: self.parse_object_name()?,
             })
         } else {
             self.expected("ALL SOURCES or SOURCE", self.peek_token())?
