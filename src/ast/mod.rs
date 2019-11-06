@@ -12,6 +12,8 @@
 
 //! SQL Abstract Syntax Tree (AST) types
 
+use std::hash::{Hash, Hasher};
+
 mod data_type;
 mod ddl;
 mod operator;
@@ -53,7 +55,8 @@ pub use self::value::{
     DateTimeField, Interval, IntervalValue, ParsedDate, ParsedDateTime, ParsedTimestamp, Value,
 };
 
-struct DisplaySeparated<'a, T>
+/// Display a bunch of displayable items with a separater
+pub struct DisplaySeparated<'a, T>
 where
     T: fmt::Display,
 {
@@ -147,12 +150,118 @@ impl fmt::Display for Ident {
 }
 
 /// A name of a table, view, custom type, etc., possibly multi-part, i.e. db.schema.obj
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+///
+/// # Semantic Equality
+///
+/// This implements equals and hash in terms of the ident *values*, not
+/// including quotes.
+///
+/// ```
+/// use sqlparser::ast::{Ident, ObjectName};
+///
+/// let with = Ident::with_quote('"', "one");
+/// let without = Ident::new("one");
+/// assert_eq!(with.to_string(), "\"one\"");
+/// assert_eq!(without.to_string(), "one");
+/// assert_eq!(ObjectName(vec![with]), ObjectName(vec![without]));
+/// ```
+///
+/// If you need to compare based on quotes see the
+/// [`ObjectName::quoted_string`] method.
+#[derive(Debug, Clone, Eq)]
 pub struct ObjectName(pub Vec<Ident>);
 
+impl PartialEq for ObjectName {
+    fn eq(&self, rhs: &ObjectName) -> bool {
+        if self.0.len() != rhs.0.len() {
+            return false;
+        }
+
+        for (l, r) in self.0.iter().zip(rhs.0.iter()) {
+            if l.value != r.value {
+                return false;
+            }
+        }
+
+        true
+    }
+}
+
+impl Hash for ObjectName {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        for ident in &self.0 {
+            state.write(ident.value.as_bytes());
+        }
+    }
+}
+
 impl fmt::Display for ObjectName {
+    /// Construct an object name including quotes around all internal idents
+    ///
+    /// Uses the format of [`ObjectName::quoted_string`].
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", display_separated(&self.0, "."))
+    }
+}
+
+impl ObjectName {
+    /// Construct an object name with no quotes around the internal items
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use sqlparser::ast::{Ident, ObjectName};
+    ///
+    /// let on = ObjectName(vec![Ident::new("one"), Ident::with_quote('"', "two sp")]);
+    /// assert_eq!(on.unquoted_string(), "one.two sp");
+    /// ```
+    pub fn unquoted_string(&self) -> String {
+        let ident_count = self.0.len();
+        match ident_count {
+            0 => unreachable!("Object created without name"),
+            1 => self.0[0].value.clone(),
+            _ => {
+                let cap: usize = self.0.iter().map(|i| i.value.len() + 1).sum();
+                let mut buf = String::with_capacity(cap - 1);
+                for (i, ident) in self.0.iter().enumerate() {
+                    buf.push_str(&ident.value);
+                    if i != ident_count - 1 {
+                        buf.push('.');
+                    }
+                }
+                buf
+            }
+        }
+    }
+
+    /// Construct an object name including quotes around all internal idents
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use sqlparser::ast::{Ident, ObjectName};
+    ///
+    /// let on = ObjectName(vec![Ident::new("one"), Ident::with_quote('"', "two sp")]);
+    /// assert_eq!(on.quoted_string(), "one.\"two sp\"");
+    /// ```
+    pub fn quoted_string(&self) -> String {
+        use std::fmt::Write;
+        let mut buf = String::new();
+        write!(&mut buf, "{}", display_separated(&self.0, ".")).unwrap();
+        buf
+    }
+
+    /// Same as `quoted_string`, but creates something that has display and does not allocate
+    /// # Examples
+    ///
+    /// ```
+    /// use sqlparser::ast::{Ident, ObjectName};
+    ///
+    /// let on = ObjectName(vec![Ident::new("one"), Ident::with_quote('"', "two sp")]);
+    /// assert_eq!(&format!("{}", on.quoted_string()), "one.\"two sp\"");
+    /// ```
+    pub fn quoted_display(&self) -> DisplaySeparated<Ident> {
+        display_separated(&self.0, ".")
     }
 }
 
