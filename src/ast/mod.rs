@@ -620,7 +620,10 @@ pub enum Statement {
     /// SHOW SOURCES;
     /// SHOW SINKS;
     /// ```
-    ShowObjects { object_type: ObjectType },
+    ShowObjects {
+        object_type: ObjectType,
+        like: Option<String>,
+    },
     /// `SHOW COLUMNS`
     ///
     /// Note: this is a MySQL-specific statement.
@@ -880,7 +883,7 @@ impl fmt::Display for Statement {
                 write!(f, "{} = {}", variable, value)
             }
             Statement::ShowVariable { variable } => write!(f, "SHOW {}", variable),
-            Statement::ShowObjects { object_type } => {
+            Statement::ShowObjects { object_type, like } => {
                 use ObjectType::*;
                 write!(
                     f,
@@ -892,7 +895,11 @@ impl fmt::Display for Statement {
                         Sink => "SINKS",
                         Index => unreachable!(),
                     }
-                )
+                )?;
+                if let Some(like) = like {
+                    write!(f, " LIKE '{}'", value::escape_single_quote_string(like))?;
+                }
+                Ok(())
             }
             Statement::ShowColumns {
                 extended,

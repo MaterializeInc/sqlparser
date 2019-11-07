@@ -505,7 +505,7 @@ macro_rules! make_visitor {
                 visit_show_variable(self, variable)
             }
 
-            fn visit_show_objects(&mut self, _object_type: ObjectType) {}
+            fn visit_show_objects(&mut self, _object_type: ObjectType, _like: &Option<String>) {}
 
             fn visit_show_columns(
                 &mut self,
@@ -654,7 +654,7 @@ macro_rules! make_visitor {
                     value,
                 } => visitor.visit_set_variable(*local, variable, value),
                 Statement::ShowVariable { variable } => visitor.visit_show_variable(variable),
-                Statement::ShowObjects { object_type } => visitor.visit_show_objects(*object_type),
+                Statement::ShowObjects { object_type, like } => visitor.visit_show_objects(*object_type, like),
                 Statement::ShowColumns {
                     extended,
                     full,

@@ -1940,6 +1940,7 @@ impl Parser {
                         val
                     ),
                 },
+                like: self.parse_like_filter()?,
             })
         } else if self.parse_keywords(vec!["CREATE", "VIEW"]) {
             Ok(Statement::ShowCreateView {
