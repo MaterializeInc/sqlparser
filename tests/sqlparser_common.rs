@@ -1912,7 +1912,10 @@ fn parse_show_objects() {
         let sql = format!("SHOW {}", s);
         assert_eq!(
             verified_stmt(&sql),
-            Statement::ShowObjects { object_type: *ot }
+            Statement::ShowObjects {
+                object_type: *ot,
+                like: None
+            }
         )
     }
 }
@@ -2739,6 +2742,21 @@ fn parse_create_sources_with_like_regex() {
             assert_eq!("kafka://whatever", url);
             assert_eq!("http://foo.bar:8081", schema_registry);
             assert!(with_options.is_empty());
+        }
+        _ => assert!(false),
+    }
+}
+
+#[test]
+fn parse_show_objects_with_like_regex() {
+    let sql = "SHOW TABLES LIKE '%foo%'";
+    match verified_stmt(sql) {
+        Statement::ShowObjects { object_type, like } => {
+            match like {
+                Some(value) => assert_eq!("%foo%", value),
+                None => unimplemented!(),
+            }
+            assert_eq!(ObjectType::Table, object_type);
         }
         _ => assert!(false),
     }
