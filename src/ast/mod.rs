@@ -897,7 +897,7 @@ impl fmt::Display for Statement {
                     }
                 )?;
                 if let Some(like) = like {
-                    write!(f, " LIKE '{}'", value::escape_single_quote_string(like),)?;
+                    write!(f, " LIKE '{}'", value::escape_single_quote_string(like))?;
                 }
                 Ok(())
             }

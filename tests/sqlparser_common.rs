@@ -2752,13 +2752,10 @@ fn parse_show_objects_with_like_regex() {
     let sql = "SHOW TABLES LIKE '%foo%'";
     match verified_stmt(sql) {
         Statement::ShowObjects { object_type, like } => {
-            match like {
-                Some(value) => assert_eq!("%foo%", value),
-                None => unimplemented!(),
-            }
+            assert_eq!(like.unwrap(), "%foo%");
             assert_eq!(ObjectType::Table, object_type);
         }
-        _ => assert!(false),
+        _ => panic!("invalid SHOW OBJECTS statement"),
     }
 }
 
