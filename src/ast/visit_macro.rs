@@ -505,7 +505,9 @@ macro_rules! make_visitor {
                 visit_show_variable(self, variable)
             }
 
-            fn visit_show_objects(&mut self, _object_type: ObjectType, _like: &Option<String>) {}
+            fn visit_show_objects(&mut self, object_type: ObjectType, filter: Option<&'ast $($mut)* ShowStatementFilter>) {
+                visit_show_objects(self, object_type, filter)
+            }
 
             fn visit_show_columns(
                 &mut self,
@@ -654,7 +656,9 @@ macro_rules! make_visitor {
                     value,
                 } => visitor.visit_set_variable(*local, variable, value),
                 Statement::ShowVariable { variable } => visitor.visit_show_variable(variable),
-                Statement::ShowObjects { object_type, like } => visitor.visit_show_objects(*object_type, like),
+                Statement::ShowObjects { object_type, filter } => {
+                    visitor.visit_show_objects(*object_type, filter.as_auto_ref())
+                }
                 Statement::ShowColumns {
                     extended,
                     full,
@@ -1534,6 +1538,17 @@ macro_rules! make_visitor {
 
         pub fn visit_show_variable<'ast, V: $name<'ast> + ?Sized>(visitor: &mut V, variable: &'ast $($mut)* Ident) {
             visitor.visit_ident(variable);
+        }
+
+        pub fn visit_show_objects<'ast, V: $name<'ast> + ?Sized>(
+            visitor: &mut V,
+            object_type: ObjectType,
+            filter: Option<&'ast $($mut)* ShowStatementFilter>
+        ) {
+            visitor.visit_object_type(object_type);
+            if let Some(filter) = filter {
+                visitor.visit_show_statement_filter(filter);
+            }
         }
 
         pub fn visit_show_columns<'ast, V: $name<'ast> + ?Sized>(

@@ -1914,9 +1914,24 @@ fn parse_show_objects() {
             verified_stmt(&sql),
             Statement::ShowObjects {
                 object_type: *ot,
-                like: None
+                filter: None
             }
         )
+    }
+}
+
+#[test]
+fn parse_show_objects_with_like_regex() {
+    let sql = "SHOW TABLES LIKE '%foo%'";
+    match verified_stmt(sql) {
+        Statement::ShowObjects {
+            object_type,
+            filter,
+        } => {
+            assert_eq!(filter.unwrap(), ShowStatementFilter::Like("%foo%".into()));
+            assert_eq!(ObjectType::Table, object_type);
+        }
+        _ => panic!("invalid SHOW OBJECTS statement"),
     }
 }
 
@@ -2744,18 +2759,6 @@ fn parse_create_sources_with_like_regex() {
             assert!(with_options.is_empty());
         }
         _ => assert!(false),
-    }
-}
-
-#[test]
-fn parse_show_objects_with_like_regex() {
-    let sql = "SHOW TABLES LIKE '%foo%'";
-    match verified_stmt(sql) {
-        Statement::ShowObjects { object_type, like } => {
-            assert_eq!(like.unwrap(), "%foo%");
-            assert_eq!(ObjectType::Table, object_type);
-        }
-        _ => panic!("invalid SHOW OBJECTS statement"),
     }
 }
 

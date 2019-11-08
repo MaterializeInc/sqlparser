@@ -1548,7 +1548,7 @@ impl Parser {
                 "TIMESTAMP" => {
                     if self.parse_keyword("WITH") {
                         self.expect_keywords(&["TIME", "ZONE"])?;
-                        return Ok(DataType::TimestampTz)
+                        return Ok(DataType::TimestampTz);
                     } else if self.parse_keyword("WITHOUT") {
                         self.expect_keywords(&["TIME", "ZONE"])?;
                     }
@@ -1557,7 +1557,7 @@ impl Parser {
                 "TIME" => {
                     if self.parse_keyword("WITH") {
                         self.expect_keywords(&["TIME", "ZONE"])?;
-                        return Ok(DataType::TimeTz)
+                        return Ok(DataType::TimeTz);
                     } else if self.parse_keyword("WITHOUT") {
                         self.expect_keywords(&["TIME", "ZONE"])?;
                     }
@@ -1940,7 +1940,7 @@ impl Parser {
                         val
                     ),
                 },
-                like: self.parse_like_filter()?,
+                filter: self.parse_show_statement_filter()?,
             })
         } else if self.parse_keywords(vec!["CREATE", "VIEW"]) {
             Ok(Statement::ShowCreateView {

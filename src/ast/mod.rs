@@ -622,7 +622,7 @@ pub enum Statement {
     /// ```
     ShowObjects {
         object_type: ObjectType,
-        like: Option<String>,
+        filter: Option<ShowStatementFilter>,
     },
     /// `SHOW COLUMNS`
     ///
@@ -883,7 +883,10 @@ impl fmt::Display for Statement {
                 write!(f, "{} = {}", variable, value)
             }
             Statement::ShowVariable { variable } => write!(f, "SHOW {}", variable),
-            Statement::ShowObjects { object_type, like } => {
+            Statement::ShowObjects {
+                object_type,
+                filter,
+            } => {
                 use ObjectType::*;
                 write!(
                     f,
@@ -896,8 +899,8 @@ impl fmt::Display for Statement {
                         Index => unreachable!(),
                     }
                 )?;
-                if let Some(like) = like {
-                    write!(f, " LIKE '{}'", value::escape_single_quote_string(like))?;
+                if let Some(filter) = filter {
+                    write!(f, " {}", filter)?;
                 }
                 Ok(())
             }
