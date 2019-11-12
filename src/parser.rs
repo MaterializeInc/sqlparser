@@ -212,7 +212,8 @@ impl Parser {
                     expr: Box::new(self.parse_subexpr(Self::UNARY_NOT_PREC)?),
                 }),
                 "TIME" => Ok(Expr::Value(Value::Time(self.parse_literal_string()?))),
-                "TIMESTAMP" => Ok(Expr::Value(self.parse_timestamp()?)),
+                "TIMESTAMP" => self.parse_timestamp(),
+                "TIMESTAMPTZ" => self.parse_timestamptz(),
                 // Here `w` is a word, check if it's a part of a multi-part
                 // identifier, a function call, or a simple identifier:
                 _ => match self.peek_token() {
@@ -508,16 +509,46 @@ impl Parser {
         }
     }
 
-    fn parse_timestamp(&mut self) -> Result<Value, ParserError> {
+    fn parse_timestamp(&mut self) -> Result<Expr, ParserError> {
+        if self.parse_keyword("WITH") {
+            self.expect_keywords(&["TIME", "ZONE"])?;
+            return Ok(Expr::Value(self.parse_timestamp_inner(true)?));
+        } else if self.parse_keyword("WITHOUT") {
+            self.expect_keywords(&["TIME", "ZONE"])?;
+        }
+        Ok(Expr::Value(self.parse_timestamp_inner(false)?))
+    }
+
+    fn parse_timestamptz(&mut self) -> Result<Expr, ParserError> {
+        Ok(Expr::Value(self.parse_timestamp_inner(true)?))
+    }
+
+    fn parse_timestamp_inner(&mut self, parse_timezone: bool) -> Result<Value, ParserError> {
         use std::convert::TryInto;
 
         let value = self.parse_literal_string()?;
-        let pdt = Self::parse_interval_string(&value, &DateTimeField::Year)?;
+        let pdt = Self::parse_timestamp_string(&value, parse_timezone)?;
 
         match (
-            pdt.year, pdt.month, pdt.day, pdt.hour, pdt.minute, pdt.second, pdt.nano,
+            pdt.year,
+            pdt.month,
+            pdt.day,
+            pdt.hour,
+            pdt.minute,
+            pdt.second,
+            pdt.nano,
+            pdt.timezone_offset_second,
         ) {
-            (Some(year), Some(month), Some(day), Some(hour), Some(minute), Some(second), nano) => {
+            (
+                Some(year),
+                Some(month),
+                Some(day),
+                Some(hour),
+                Some(minute),
+                Some(second),
+                nano,
+                timezone_offset_second,
+            ) => {
                 let p_err = |e: std::num::TryFromIntError, field: &str| {
                     ParserError::ParserError(format!(
                         "{} in date '{}' is invalid: {}",
@@ -555,6 +586,23 @@ impl Parser {
                 if second > 60 {
                     parser_err!("Second in timestamp '{}' cannot be > 60: {}", value, second)?;
                 }
+
+                if parse_timezone {
+                    return Ok(Value::TimestampTz(
+                        value,
+                        ParsedTimestamp {
+                            year,
+                            month,
+                            day,
+                            hour,
+                            minute,
+                            second,
+                            nano: nano.unwrap_or(0),
+                            timezone_offset_second: timezone_offset_second.unwrap_or(0),
+                        },
+                    ));
+                }
+
                 Ok(Value::Timestamp(
                     value,
                     ParsedTimestamp {
@@ -565,6 +613,7 @@ impl Parser {
                         minute,
                         second,
                         nano: nano.unwrap_or(0),
+                        timezone_offset_second: 0,
                     },
                 ))
             }
@@ -771,6 +820,27 @@ impl Parser {
         }
         let toks = datetime::tokenize_interval(value)?;
         datetime::build_parsed_datetime(&toks, leading_field, value)
+    }
+
+    pub fn parse_timestamp_string(
+        value: &str,
+        parse_timezone: bool,
+    ) -> Result<ParsedDateTime, ParserError> {
+        if value.is_empty() {
+            return Err(ParserError::ParserError(
+                "Timestamp string is empty!".to_string(),
+            ));
+        }
+
+        let (ts_string, tz_string) = datetime::split_timestamp_string(value);
+
+        let mut pdt = Self::parse_interval_string(ts_string, &DateTimeField::Year)?;
+        if !parse_timezone || tz_string.is_empty() {
+            return Ok(pdt);
+        }
+
+        pdt.timezone_offset_second = Some(datetime::parse_timezone_offset_second(tz_string)?);
+        Ok(pdt)
     }
 
     /// Parses the parens following the `[ NOT ] IN` operator
@@ -1554,6 +1624,7 @@ impl Parser {
                     }
                     Ok(DataType::Timestamp)
                 }
+                "TIMESTAMPTZ" => Ok(DataType::TimestampTz),
                 "TIME" => {
                     if self.parse_keyword("WITH") {
                         self.expect_keywords(&["TIME", "ZONE"])?;

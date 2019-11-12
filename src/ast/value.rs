@@ -52,6 +52,8 @@ pub enum Value {
     Time(String),
     /// `TIMESTAMP '...'` literals
     Timestamp(String, ParsedTimestamp),
+    /// `TIMESTAMP WITH TIME ZONE` literals
+    TimestampTz(String, ParsedTimestamp),
     /// INTERVAL literals, roughly in the following format:
     ///
     /// ```text
@@ -80,6 +82,11 @@ impl fmt::Display for Value {
             Value::Date(v, _) => write!(f, "DATE '{}'", escape_single_quote_string(v)),
             Value::Time(v) => write!(f, "TIME '{}'", escape_single_quote_string(v)),
             Value::Timestamp(v, _) => write!(f, "TIMESTAMP '{}'", escape_single_quote_string(v)),
+            Value::TimestampTz(v, _) => write!(
+                f,
+                "TIMESTAMP WITH TIME ZONE '{}'",
+                escape_single_quote_string(v)
+            ),
             Value::Interval(IntervalValue {
                 parsed: _,
                 value,

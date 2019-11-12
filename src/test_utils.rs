@@ -83,6 +83,11 @@ impl TestedDialects {
         self.one_statement_parses_to(query, query)
     }
 
+    /// Parse `sql` to a single [Statement] without checking for modifications
+    pub fn unverified_stmt(&self, query: &str) -> Statement {
+        self.one_statement_parses_to(query, "")
+    }
+
     /// Ensures that `sql` parses as a single [Query], and is not modified
     /// after a serialization round-trip.
     pub fn verified_query(&self, sql: &str) -> Query {
@@ -92,10 +97,27 @@ impl TestedDialects {
         }
     }
 
+    /// Ensures that `sql` parses as a single [Query]
+    /// Does not check for modifications
+    pub fn unverified_query(&self, sql: &str) -> Query {
+        match self.unverified_stmt(sql) {
+            Statement::Query(query) => *query,
+            _ => panic!("Expected Query"),
+        }
+    }
+
     /// Ensures that `sql` parses as a single [Select], and is not modified
     /// after a serialization round-trip.
     pub fn verified_only_select(&self, query: &str) -> Select {
         match self.verified_query(query).body {
+            SetExpr::Select(s) => *s,
+            _ => panic!("Expected SetExpr::Select"),
+        }
+    }
+
+    /// Ensures that `sql` parses as a single [Select]
+    pub fn unverified_only_select(&self, query: &str) -> Select {
+        match self.unverified_query(query).body {
             SetExpr::Select(s) => *s,
             _ => panic!("Expected SetExpr::Select"),
         }

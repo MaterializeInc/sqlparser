@@ -280,6 +280,7 @@ pub struct ParsedTimestamp {
     pub minute: u8,
     pub second: u8,
     pub nano: u32,
+    pub timezone_offset_second: i64,
 }
 
 /// All of the fields that can appear in a literal `DATE`, `TIMESTAMP` or `INTERVAL` string
@@ -297,6 +298,7 @@ pub struct ParsedDateTime {
     pub minute: Option<u64>,
     pub second: Option<u64>,
     pub nano: Option<u32>,
+    pub timezone_offset_second: Option<i64>,
 }
 
 impl ParsedDateTime {
@@ -320,6 +322,7 @@ impl Default for ParsedDateTime {
             minute: None,
             second: None,
             nano: None,
+            timezone_offset_second: None,
         }
     }
 }

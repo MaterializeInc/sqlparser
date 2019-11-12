@@ -1358,7 +1358,8 @@ fn parse_literal_timestamp() {
                 hour: 1,
                 minute: 23,
                 second: 34,
-                nano: 0
+                nano: 0,
+                timezone_offset_second: 0,
             }
         )),
         expr_from_projection(only(&select.projection)),
@@ -1376,11 +1377,82 @@ fn parse_literal_timestamp() {
                 hour: 1,
                 minute: 23,
                 second: 34,
-                nano: 555_000_000
+                nano: 555_000_000,
+                timezone_offset_second: 0,
             }
         )),
         expr_from_projection(only(&select.projection)),
     );
+}
+
+#[test]
+fn parse_literal_timestamptz() {
+    let time_formats = [
+        "TIMESTAMP",
+        "TIMESTAMPTZ",
+        "TIMESTAMP WITH TIME ZONE",
+        "TIMESTAMP WITHOUT TIME ZONE",
+    ];
+
+    #[rustfmt::skip]
+    let test_cases = [("1999-01-01 01:23:34.555", 1999, 1, 1, 1, 23, 34, 555_000_000, 0),
+        ("1999-01-01 01:23:34.555+0:00", 1999, 1, 1, 1, 23, 34, 555_000_000, 0),
+        ("1999-01-01 01:23:34.555+0", 1999, 1, 1, 1, 23, 34, 555_000_000, 0),
+        ("1999-01-01 01:23:34.555z", 1999, 1, 1, 1, 23, 34, 555_000_000, 0),
+        ("1999-01-01 01:23:34.555Z", 1999, 1, 1, 1, 23, 34, 555_000_000, 0),
+        ("1999-01-01 01:23:34.555 z", 1999, 1, 1, 1, 23, 34, 555_000_000, 0),
+        ("1999-01-01 01:23:34.555 Z", 1999, 1, 1, 1, 23, 34, 555_000_000, 0),
+        ("1999-01-01 01:23:34.555+4:00", 1999, 1, 1, 1, 23, 34, 555_000_000, 14400),
+        ("1999-01-01 01:23:34.555-4:00", 1999, 1, 1, 1, 23, 34, 555_000_000, -14400),
+        ("1999-01-01 01:23:34.555+400", 1999, 1, 1, 1, 23, 34, 555_000_000, 14400),
+        ("1999-01-01 01:23:34.555+4", 1999, 1, 1, 1, 23, 34, 555_000_000, 14400),
+        ("1999-01-01 01:23:34.555+4:30", 1999, 1, 1, 1, 23, 34, 555_000_000, 16200),
+        ("1999-01-01 01:23:34.555+430", 1999, 1, 1, 1, 23, 34, 555_000_000, 16200),
+        ("1999-01-01 01:23:34.555+4:45", 1999, 1, 1, 1, 23, 34, 555_000_000, 17100),
+        ("1999-01-01 01:23:34.555+445", 1999, 1, 1, 1, 23, 34, 555_000_000, 17100),
+        ("1999-01-01 01:23:34.555+14:45", 1999, 1, 1, 1, 23, 34, 555_000_000, 53100),
+        ("1999-01-01 01:23:34.555-14:45", 1999, 1, 1, 1, 23, 34, 555_000_000, -53100),
+        ("1999-01-01 01:23:34.555+1445", 1999, 1, 1, 1, 23, 34, 555_000_000, 53100),
+        ("1999-01-01 01:23:34.555-1445", 1999, 1, 1, 1, 23, 34, 555_000_000, -53100),
+        ("1999-01-01 01:23:34.555 +14:45", 1999, 1, 1, 1, 23, 34, 555_000_000, 53100),
+        ("1999-01-01 01:23:34.555 -14:45", 1999, 1, 1, 1, 23, 34, 555_000_000, -53100),
+        ("1999-01-01 01:23:34.555 +1445", 1999, 1, 1, 1, 23, 34, 555_000_000, 53100),
+        ("1999-01-01 01:23:34.555 -1445", 1999, 1, 1, 1, 23, 34, 555_000_000, -53100),
+    ];
+
+    for test in test_cases.iter() {
+        for format in time_formats.iter() {
+            let sql = format!("SELECT {} '{}'", format, test.0);
+            println!("{}", sql);
+            let select = all_dialects().unverified_only_select(&sql);
+
+            let mut pts = ParsedTimestamp {
+                year: test.1,
+                month: test.2,
+                day: test.3,
+                hour: test.4,
+                minute: test.5,
+                second: test.6,
+                nano: test.7,
+                timezone_offset_second: 0 as i64,
+            };
+
+            if *format == "TIMESTAMPTZ" || *format == "TIMESTAMP WITH TIME ZONE" {
+                pts.timezone_offset_second = test.8;
+                let value = Value::TimestampTz(test.0.into(), pts);
+                assert_eq!(
+                    &Expr::Value(value),
+                    expr_from_projection(only(&select.projection))
+                );
+            } else {
+                let value = Value::Timestamp(test.0.into(), pts);
+                assert_eq!(
+                    &Expr::Value(value),
+                    expr_from_projection(only(&select.projection))
+                );
+            }
+        }
+    }
 }
 
 #[test]
