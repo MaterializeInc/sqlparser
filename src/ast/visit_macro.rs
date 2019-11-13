@@ -526,6 +526,13 @@ macro_rules! make_visitor {
                 visit_show_create_view(self, view_name)
             }
 
+            fn visit_show_create_source(
+                &mut self,
+                source_name: &'ast $($mut)* ObjectName,
+            ) {
+                visit_show_create_source(self, source_name)
+            }
+
             fn visit_show_statement_filter(&mut self, filter: &'ast $($mut)* ShowStatementFilter) {
                 visit_show_statement_filter(self, filter)
             }
@@ -666,6 +673,7 @@ macro_rules! make_visitor {
                     filter,
                 } => visitor.visit_show_columns(*extended, *full, table_name, filter.as_auto_ref()),
                 Statement::ShowCreateView { view_name } => visitor.visit_show_create_view(view_name),
+                Statement::ShowCreateSource { source_name } => visitor.visit_show_create_source(source_name),
                 Statement::StartTransaction { modes } => visitor.visit_start_transaction(modes),
                 Statement::SetTransaction { modes } => visitor.visit_set_transaction(modes),
                 Statement::Commit { chain } => visitor.visit_commit(*chain),
@@ -1569,6 +1577,13 @@ macro_rules! make_visitor {
             view_name: &'ast $($mut)* ObjectName,
         ) {
             visitor.visit_object_name(view_name);
+        }
+
+        pub fn visit_show_create_source<'ast, V: $name<'ast> + ?Sized>(
+            visitor: &mut V,
+            source_name: &'ast $($mut)* ObjectName
+        ) {
+            visitor.visit_object_name(source_name);
         }
 
         pub fn visit_show_statement_filter<'ast, V: $name<'ast> + ?Sized>(
