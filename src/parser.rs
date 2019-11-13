@@ -1946,6 +1946,10 @@ impl Parser {
             Ok(Statement::ShowCreateView {
                 view_name: self.parse_object_name()?,
             })
+        } else if self.parse_keywords(vec!["CREATE", "SOURCE"]) {
+            Ok(Statement::ShowCreateSource {
+                source_name: self.parse_object_name()?,
+            })
         } else {
             Ok(Statement::ShowVariable {
                 variable: self.parse_identifier()?,

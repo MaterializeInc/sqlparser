@@ -635,6 +635,8 @@ pub enum Statement {
     },
     /// `SHOW CREATE VIEW <view>`
     ShowCreateView { view_name: ObjectName },
+    /// `SHOW CREATE SOURCE <source>`
+    ShowCreateSource { source_name: ObjectName },
     /// `{ BEGIN [ TRANSACTION | WORK ] | START TRANSACTION } ...`
     StartTransaction { modes: Vec<TransactionMode> },
     /// `SET TRANSACTION ...`
@@ -926,6 +928,10 @@ impl fmt::Display for Statement {
             Statement::ShowCreateView { view_name } => {
                 f.write_str("SHOW CREATE VIEW ")?;
                 write!(f, "{}", view_name)
+            }
+            Statement::ShowCreateSource { source_name } => {
+                f.write_str("SHOW CREATE SOURCE ")?;
+                write!(f, "{}", source_name)
             }
             Statement::StartTransaction { modes } => {
                 write!(f, "START TRANSACTION")?;
