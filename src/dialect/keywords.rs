@@ -386,6 +386,7 @@ define_keywords!(
     TIES,
     TIME,
     TIMESTAMP,
+    TIMESTAMPTZ,
     TIMEZONE_HOUR,
     TIMEZONE_MINUTE,
     TO,
