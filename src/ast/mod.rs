@@ -624,6 +624,13 @@ pub enum Statement {
         object_type: ObjectType,
         filter: Option<ShowStatementFilter>,
     },
+    /// `SHOW INDEX|INDEXES|KEYS`
+    ///
+    /// Note: this is a MySQL-specific statement
+    ShowIndexes {
+        table_name: ObjectName,
+        filter: Option<ShowStatementFilter>,
+    },
     /// `SHOW COLUMNS`
     ///
     /// Note: this is a MySQL-specific statement.
@@ -901,6 +908,13 @@ impl fmt::Display for Statement {
                         Index => unreachable!(),
                     }
                 )?;
+                if let Some(filter) = filter {
+                    write!(f, " {}", filter)?;
+                }
+                Ok(())
+            }
+            Statement::ShowIndexes { table_name, filter } => {
+                write!(f, "SHOW INDEXES FROM {}", table_name)?;
                 if let Some(filter) = filter {
                     write!(f, " {}", filter)?;
                 }

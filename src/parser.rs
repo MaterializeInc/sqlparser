@@ -2013,6 +2013,22 @@ impl Parser {
                 },
                 filter: self.parse_show_statement_filter()?,
             })
+        } else if self
+            .parse_one_of_keywords(&["INDEX", "INDEXES", "KEYS"])
+            .is_some()
+        {
+            match self.parse_one_of_keywords(&["FROM", "IN"]) {
+                Some(_) => {
+                    let table_name = self.parse_object_name()?;
+                    let filter = if self.parse_keyword("WHERE") {
+                        Some(ShowStatementFilter::Where(self.parse_expr()?))
+                    } else {
+                        None
+                    };
+                    Ok(Statement::ShowIndexes { table_name, filter })
+                }
+                None => self.expected("FROM or IN after SHOW INDEXES", self.peek_token()),
+            }
         } else if self.parse_keywords(vec!["CREATE", "VIEW"]) {
             Ok(Statement::ShowCreateView {
                 view_name: self.parse_object_name()?,

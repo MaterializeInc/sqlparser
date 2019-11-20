@@ -2008,6 +2008,58 @@ fn parse_show_objects_with_like_regex() {
 }
 
 #[test]
+fn parse_show_indexes() {
+    let canonical_sql = "SHOW INDEXES FROM foo";
+    assert_eq!(
+        verified_stmt(&canonical_sql),
+        Statement::ShowIndexes {
+            table_name: ObjectName(vec!["foo".into()]),
+            filter: None,
+        }
+    );
+    one_statement_parses_to("SHOW INDEXES IN foo", &canonical_sql);
+    let index_alias = ["INDEX", "KEYS"];
+    let from_alias = ["FROM", "IN"];
+    for i in &index_alias {
+        for f in &from_alias {
+            let sql = format!("SHOW {} {} foo", i, f);
+            one_statement_parses_to(&sql, &canonical_sql);
+        }
+    }
+}
+
+#[test]
+fn parse_show_indexes_with_where_expr() {
+    let canonical_sql = "SHOW INDEXES FROM foo WHERE index_name = 'bar'";
+    match verified_stmt(canonical_sql) {
+        Statement::ShowIndexes { table_name, filter } => {
+            assert_eq!(
+                filter.unwrap(),
+                ShowStatementFilter::Where(Expr::BinaryOp {
+                    left: Box::new(Expr::Identifier(Ident::new("index_name"))),
+                    op: BinaryOperator::Eq,
+                    right: Box::new(Expr::Value(Value::SingleQuotedString("bar".to_string()))),
+                })
+            );
+            assert_eq!(table_name, ObjectName(vec!["foo".into()]));
+        }
+        _ => panic!("invalid SHOW INDEXES statement"),
+    }
+    one_statement_parses_to(
+        "SHOW INDEXES IN foo WHERE index_name = 'bar'",
+        &canonical_sql,
+    );
+    let index_alias = ["INDEX", "KEYS"];
+    let from_alias = ["FROM", "IN"];
+    for i in &index_alias {
+        for f in &from_alias {
+            let sql = format!("SHOW {} {} foo WHERE index_name = 'bar'", i, f);
+            one_statement_parses_to(&sql, &canonical_sql);
+        }
+    }
+}
+
+#[test]
 fn parse_show_create_view() {
     assert_eq!(
         verified_stmt("SHOW CREATE VIEW foo"),
