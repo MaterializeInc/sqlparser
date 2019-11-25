@@ -529,7 +529,7 @@ pub enum Statement {
     CreateSource {
         name: ObjectName,
         url: String,
-        schema: SourceSchema,
+        schema: Option<SourceSchema>,
         with_options: Vec<SqlOption>,
     },
     /// `CREATE SOURCES`
@@ -736,17 +736,23 @@ impl fmt::Display for Statement {
             } => {
                 write!(
                     f,
-                    "CREATE SOURCE {} FROM {} USING SCHEMA ",
+                    "CREATE SOURCE {} FROM {}",
                     name.to_string(),
                     Value::SingleQuotedString(url.clone()).to_string()
                 )?;
                 match schema {
-                    SourceSchema::Raw(schema) => {
-                        write!(f, "{}", Value::SingleQuotedString(schema.clone()))?;
+                    Some(schema) => {
+                        write!(f, " USING SCHEMA ")?;
+                        match schema {
+                            SourceSchema::Raw(schema) => {
+                                write!(f, "{}", Value::SingleQuotedString(schema.clone()))?;
+                            }
+                            SourceSchema::Registry(url) => {
+                                write!(f, "REGISTRY {}", Value::SingleQuotedString(url.clone()))?;
+                            }
+                        }
                     }
-                    SourceSchema::Registry(url) => {
-                        write!(f, "REGISTRY {}", Value::SingleQuotedString(url.clone()))?;
-                    }
+                    None => {}
                 }
                 if !with_options.is_empty() {
                     write!(f, " WITH ({})", display_comma_separated(with_options))?;
