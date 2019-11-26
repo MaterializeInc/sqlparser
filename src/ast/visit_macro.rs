@@ -343,7 +343,7 @@ macro_rules! make_visitor {
                 &mut self,
                 name: &'ast $($mut)* ObjectName,
                 url: &'ast $($mut)* String,
-                schema: &'ast $($mut)* SourceSchema,
+                schema: Option<&'ast $($mut)* SourceSchema>,
                 with_options: &'ast $($mut)* Vec<SqlOption>,
             ) {
                 visit_create_source(self, name, url, schema, with_options)
@@ -612,7 +612,7 @@ macro_rules! make_visitor {
                     url,
                     schema,
                     with_options,
-                } => visitor.visit_create_source(name, url, schema, with_options),
+                } => visitor.visit_create_source(name, url, schema.as_auto_ref(), with_options),
                 Statement::CreateSources {
                     like,
                     url,
@@ -1255,12 +1255,14 @@ macro_rules! make_visitor {
             visitor: &mut V,
             name: &'ast $($mut)* ObjectName,
             url: &'ast $($mut)* String,
-            schema: &'ast $($mut)* SourceSchema,
+            schema: Option<&'ast $($mut)* SourceSchema>,
             with_options: &'ast $($mut)* Vec<SqlOption>,
         ) {
             visitor.visit_object_name(name);
             visitor.visit_literal_string(url);
-            visitor.visit_source_schema(schema);
+            if let Some(schema) = schema {
+                visitor.visit_source_schema(schema);
+            }
             for option in with_options {
                 visitor.visit_option(option);
             }

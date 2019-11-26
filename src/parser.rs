@@ -1145,12 +1145,15 @@ impl Parser {
         let name = self.parse_object_name()?;
         self.expect_keyword("FROM")?;
         let url = self.parse_literal_string()?;
-        self.expect_keyword("USING")?;
-        self.expect_keyword("SCHEMA")?;
-        let schema = if self.parse_keyword("REGISTRY") {
-            SourceSchema::Registry(self.parse_literal_string()?)
+        let schema = if self.parse_keywords(vec!["USING", "SCHEMA"]) {
+            let schema = if self.parse_keyword("REGISTRY") {
+                SourceSchema::Registry(self.parse_literal_string()?)
+            } else {
+                SourceSchema::Raw(self.parse_literal_string()?)
+            };
+            Some(schema)
         } else {
-            SourceSchema::Raw(self.parse_literal_string()?)
+            None
         };
         let with_options = self.parse_with_options()?;
         Ok(Statement::CreateSource {
