@@ -451,17 +451,22 @@ impl Parser {
     pub fn parse_date_time_field(&mut self) -> Result<DateTimeField, ParserError> {
         let tok = self.next_token();
         if let Some(Token::Word(ref k)) = tok {
-            match k.keyword.as_ref() {
-                "YEAR" => Ok(DateTimeField::Year),
-                "MONTH" => Ok(DateTimeField::Month),
-                "DAY" => Ok(DateTimeField::Day),
-                "HOUR" => Ok(DateTimeField::Hour),
-                "MINUTE" => Ok(DateTimeField::Minute),
-                "SECOND" => Ok(DateTimeField::Second),
-                _ => self.expected("date/time field", tok)?,
-            }
+            self.parse_date_time_given_str(k.keyword.as_ref())
         } else {
             self.expected("date/time field", tok)?
+        }
+    }
+
+    // Hacked internal of parse_date_time_field to allow directly passing strs.
+    pub fn parse_date_time_given_str(&mut self, s: &str) -> Result<DateTimeField, ParserError> {
+        match s {
+            "YEAR" => Ok(DateTimeField::Year),
+            "MONTH" => Ok(DateTimeField::Month),
+            "DAY" => Ok(DateTimeField::Day),
+            "HOUR" => Ok(DateTimeField::Hour),
+            "MINUTE" => Ok(DateTimeField::Minute),
+            "SECOND" => Ok(DateTimeField::Second),
+            _ => parser_err!("Expected date/time field, found: {}", s),
         }
     }
 
@@ -644,14 +649,28 @@ impl Parser {
 
         // The first token in an interval is a string literal which specifies
         // the duration of the interval.
-        let raw_value = self.parse_literal_string()?;
-
-        // Following the string literal is a qualifier which indicates the units
-        // of the duration specified in the string literal.
-        //
-        // Note that PostgreSQL allows omitting the qualifier, but we currently
-        // require at least the leading field, in accordance with the ANSI spec.
-        let leading_field = self.parse_date_time_field()?;
+        let mut raw_value = self.parse_literal_string()?;
+        let leading_field = if raw_value.contains(" ") {
+            // Hack to allow INTERVAL types like:
+            // INTERVAL '-30 day'
+            let (new_raw_value, leading_field) = {
+                let split = raw_value.split(" ").collect::<Vec<&str>>();
+                if split.len() == 2 {
+                    (String::from(split[0]), self.parse_date_time_given_str(&split[1].to_uppercase())?)
+                } else {
+                    return parser_err!("Invalid INTERVAL: {:#?}", raw_value);
+                }
+            };
+            raw_value = new_raw_value;
+            leading_field
+        } else {
+            // Following the string literal is a qualifier which indicates the units
+            // of the duration specified in the string literal.
+            //
+            // Note that PostgreSQL allows omitting the qualifier, but we currently
+            // require at least the leading field, in accordance with the ANSI spec.
+            self.parse_date_time_field()?
+        };
 
         let (leading_precision, last_field, fsec_precision) =
             if leading_field == DateTimeField::Second {
