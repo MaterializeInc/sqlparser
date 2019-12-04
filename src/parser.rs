@@ -470,6 +470,17 @@ impl Parser {
         }
     }
 
+    pub fn contains_date_time_str(&mut self, interval: &str) -> Result<bool, ParserError> {
+        let upper_case_interval = interval.to_uppercase();
+        let date_time_strs = ["YEAR", "MONTH", "DAY", "HOUR", "MINUTE", "SECOND"];
+        for dts in &date_time_strs {
+            if upper_case_interval.contains(dts) {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
     fn parse_date(&mut self) -> Result<Value, ParserError> {
         use std::convert::TryInto;
 
@@ -650,13 +661,16 @@ impl Parser {
         // The first token in an interval is a string literal which specifies
         // the duration of the interval.
         let mut raw_value = self.parse_literal_string()?;
-        let leading_field = if raw_value.contains(" ") {
+        let leading_field = if self.contains_date_time_str(&raw_value)? {
             // Hack to allow INTERVAL types like:
             // INTERVAL '-30 day'
             let (new_raw_value, leading_field) = {
                 let split = raw_value.split(" ").collect::<Vec<&str>>();
                 if split.len() == 2 {
-                    (String::from(split[0]), self.parse_date_time_given_str(&split[1].to_uppercase())?)
+                    (
+                        String::from(split[0]),
+                        self.parse_date_time_given_str(&split[1].to_uppercase())?,
+                    )
                 } else {
                     return parser_err!("Invalid INTERVAL: {:#?}", raw_value);
                 }
