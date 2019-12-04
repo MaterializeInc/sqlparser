@@ -2820,7 +2820,7 @@ fn parse_create_source_raw_schema() {
         } => {
             assert_eq!("foo", name.to_string());
             assert_eq!("bar", url);
-            assert_eq!(SourceSchema::Raw("baz".into()), schema);
+            assert_eq!(SourceSchema::Raw("baz".into()), schema.unwrap());
             assert_eq!(
                 with_options,
                 vec![SqlOption {
@@ -2847,7 +2847,7 @@ fn parse_create_source_registry() {
             assert_eq!("bar", url);
             assert_eq!(
                 SourceSchema::Registry("http://localhost:8081".into()),
-                schema
+                schema.unwrap()
             );
             assert_eq!(with_options, vec![]);
         }
