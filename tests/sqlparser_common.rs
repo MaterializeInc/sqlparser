@@ -1524,6 +1524,18 @@ fn parse_literal_interval_monthlike() {
         None,
         Some("The interval string '1-1' specifies MONTHs but the requested precision would truncate to YEAR"),
     );
+
+    iv.value = "-1".to_string();
+    iv.leading_field = DateTimeField::Month;
+    iv.parsed.is_positive = false;
+    iv.parsed.year = None;
+    verify_interval(
+        "SELECT INTERVAL '-1' MONTH",
+        iv.clone(),
+        Interval::Months(-1),
+        None,
+        None,
+    )
 }
 
 #[test]
