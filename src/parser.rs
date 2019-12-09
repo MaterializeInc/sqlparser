@@ -201,6 +201,10 @@ impl Parser {
                     self.prev_token();
                     Ok(Expr::Value(self.parse_value()?))
                 }
+                "ARRAY" => {
+                    self.prev_token();
+                    Ok(Expr::Value(self.parse_value()?))
+                }
                 "CASE" => self.parse_case_expr(),
                 "CAST" => self.parse_cast_expr(),
                 "DATE" => Ok(Expr::Value(self.parse_date()?)),
@@ -1588,6 +1592,7 @@ impl Parser {
                     "TRUE" => Ok(Value::Boolean(true)),
                     "FALSE" => Ok(Value::Boolean(false)),
                     "NULL" => Ok(Value::Null),
+                    "ARRAY" => self.parse_array(),
                     _ => {
                         return parser_err!(format!("No value parser for keyword {}", k.keyword));
                     }
@@ -1608,6 +1613,13 @@ impl Parser {
             },
             None => parser_err!("Expecting a value, but found EOF"),
         }
+    }
+
+    fn parse_array(&mut self) -> Result<Value, ParserError> {
+        self.expect_token(&Token::LBracket)?;
+        let values = self.parse_comma_separated(|parser| parser.parse_value())?;
+        self.expect_token(&Token::RBracket)?;
+        Ok(Value::Array(values))
     }
 
     pub fn parse_number_value(&mut self) -> Result<Value, ParserError> {
@@ -1640,74 +1652,85 @@ impl Parser {
 
     /// Parse a SQL datatype (in the context of a CREATE TABLE statement for example)
     pub fn parse_data_type(&mut self) -> Result<DataType, ParserError> {
-        match self.next_token() {
+        let mut data_type = match self.next_token() {
             Some(Token::Word(k)) => match k.keyword.as_ref() {
-                "BOOLEAN" => Ok(DataType::Boolean),
-                "FLOAT" => Ok(DataType::Float(self.parse_optional_precision()?)),
-                "REAL" => Ok(DataType::Real),
+                "BOOLEAN" => DataType::Boolean,
+                "FLOAT" => DataType::Float(self.parse_optional_precision()?),
+                "REAL" => DataType::Real,
                 "DOUBLE" => {
                     let _ = self.parse_keyword("PRECISION");
-                    Ok(DataType::Double)
+                    DataType::Double
                 }
-                "SMALLINT" => Ok(DataType::SmallInt),
-                "INT" | "INTEGER" => Ok(DataType::Int),
-                "BIGINT" => Ok(DataType::BigInt),
-                "VARCHAR" => Ok(DataType::Varchar(self.parse_optional_precision()?)),
+                "SMALLINT" => DataType::SmallInt,
+                "INT" | "INTEGER" => DataType::Int,
+                "BIGINT" => DataType::BigInt,
+                "VARCHAR" => DataType::Varchar(self.parse_optional_precision()?),
                 "CHAR" | "CHARACTER" => {
                     if self.parse_keyword("VARYING") {
-                        Ok(DataType::Varchar(self.parse_optional_precision()?))
+                        DataType::Varchar(self.parse_optional_precision()?)
                     } else {
-                        Ok(DataType::Char(self.parse_optional_precision()?))
+                        DataType::Char(self.parse_optional_precision()?)
                     }
                 }
-                "UUID" => Ok(DataType::Uuid),
-                "DATE" => Ok(DataType::Date),
+                "UUID" => DataType::Uuid,
+                "DATE" => DataType::Date,
                 "TIMESTAMP" => {
                     if self.parse_keyword("WITH") {
                         self.expect_keywords(&["TIME", "ZONE"])?;
-                        return Ok(DataType::TimestampTz);
-                    } else if self.parse_keyword("WITHOUT") {
-                        self.expect_keywords(&["TIME", "ZONE"])?;
+                        DataType::TimestampTz
+                    } else {
+                        if self.parse_keyword("WITHOUT") {
+                            self.expect_keywords(&["TIME", "ZONE"])?;
+                        }
+                        DataType::Timestamp
                     }
-                    Ok(DataType::Timestamp)
                 }
-                "TIMESTAMPTZ" => Ok(DataType::TimestampTz),
+                "TIMESTAMPTZ" => DataType::TimestampTz,
                 "TIME" => {
                     if self.parse_keyword("WITH") {
                         self.expect_keywords(&["TIME", "ZONE"])?;
-                        return Ok(DataType::TimeTz);
-                    } else if self.parse_keyword("WITHOUT") {
-                        self.expect_keywords(&["TIME", "ZONE"])?;
+                        DataType::TimeTz
+                    } else {
+                        if self.parse_keyword("WITHOUT") {
+                            self.expect_keywords(&["TIME", "ZONE"])?;
+                        }
+                        DataType::Time
                     }
-                    Ok(DataType::Time)
                 }
                 // Interval types can be followed by a complicated interval
                 // qualifier that we don't currently support. See
                 // parse_interval_literal for a taste.
-                "INTERVAL" => Ok(DataType::Interval),
-                "REGCLASS" => Ok(DataType::Regclass),
-                "TEXT" => {
-                    if self.consume_token(&Token::LBracket) {
-                        // Note: this is postgresql-specific
-                        self.expect_token(&Token::RBracket)?;
-                        Ok(DataType::Array(Box::new(DataType::Text)))
-                    } else {
-                        Ok(DataType::Text)
-                    }
-                }
-                "BYTEA" => Ok(DataType::Bytea),
+                "INTERVAL" => DataType::Interval,
+                "REGCLASS" => DataType::Regclass,
+                "TEXT" => DataType::Text,
+                "BYTEA" => DataType::Bytea,
                 "NUMERIC" | "DECIMAL" | "DEC" => {
                     let (precision, scale) = self.parse_optional_precision_scale()?;
-                    Ok(DataType::Decimal(precision, scale))
+                    DataType::Decimal(precision, scale)
                 }
                 _ => {
                     self.prev_token();
                     let type_name = self.parse_object_name()?;
-                    Ok(DataType::Custom(type_name))
+                    DataType::Custom(type_name)
                 }
             },
-            other => self.expected("a data type name", other),
+            other => self.expected("a data type name", other)?,
+        };
+        match &self.peek_token() {
+            Some(Token::LBracket) => {
+                while self.consume_token(&Token::LBracket) {
+                    // Note: this is postgresql-specific
+                    self.expect_token(&Token::RBracket)?;
+                    data_type = DataType::Array(Box::new(data_type));
+                }
+            }
+            Some(Token::Word(k)) if &k.keyword == "ARRAY" => {
+                self.next_token();
+                data_type = DataType::Array(Box::new(data_type));
+            }
+            _ => (),
         }
+        Ok(data_type)
     }
 
     /// Parse `AS identifier` (or simply `identifier` if it's not a reserved keyword)

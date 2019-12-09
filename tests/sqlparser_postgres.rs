@@ -356,6 +356,34 @@ fn parse_show() {
     )
 }
 
+#[test]
+fn parse_array() {
+    let expr = pg_and_generic().verified_expr("ARRAY[1, 'foo']");
+
+    assert_eq!(
+        expr,
+        Expr::Value(Value::Array(vec![
+            Value::Number("1".into()),
+            Value::SingleQuotedString("foo".to_owned())
+        ]))
+    );
+}
+
+#[test]
+fn parse_array_datatype() {
+    let sql = "SELECT '{{1,2},{3,4}}'::int[][]";
+    let select = pg_and_generic().unverified_only_select(sql);
+    assert_eq!(
+        &Expr::Cast {
+            expr: Box::new(Expr::Value(Value::SingleQuotedString(
+                "{{1,2},{3,4}}".to_owned()
+            ))),
+            data_type: DataType::Array(Box::new(DataType::Array(Box::new(DataType::Int)))),
+        },
+        expr_from_projection(only(&select.projection))
+    );
+}
+
 fn pg() -> TestedDialects {
     TestedDialects {
         dialects: vec![Box::new(PostgreSqlDialect {})],
