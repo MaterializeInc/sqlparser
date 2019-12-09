@@ -68,6 +68,8 @@ pub enum Value {
     Interval(IntervalValue),
     /// `NULL` value
     Null,
+    /// An array of values
+    Array(Vec<Value>),
 }
 
 impl fmt::Display for Value {
@@ -132,6 +134,18 @@ impl fmt::Display for Value {
                 Ok(())
             }
             Value::Null => write!(f, "NULL"),
+            Value::Array(array) => {
+                let mut values = array.iter().peekable();
+                write!(f, "ARRAY[")?;
+                while let Some(value) = values.next() {
+                    write!(f, "{}", value)?;
+                    if values.peek().is_some() {
+                        write!(f, ", ")?;
+                    }
+                }
+                write!(f, "]")?;
+                Ok(())
+            }
         }
     }
 }

@@ -900,6 +900,21 @@ fn parse_cast() {
 }
 
 #[test]
+fn parse_array_datatype() {
+    let sql = "SELECT CAST('{{1,2},{3,4}}' AS int ARRAY)";
+    let select = all_dialects().unverified_only_select(sql);
+    assert_eq!(
+        &Expr::Cast {
+            expr: Box::new(Expr::Value(Value::SingleQuotedString(
+                "{{1,2},{3,4}}".to_owned()
+            ))),
+            data_type: DataType::Array(Box::new(DataType::Int)),
+        },
+        expr_from_projection(only(&select.projection))
+    );
+}
+
+#[test]
 fn parse_extract() {
     let sql = "SELECT EXTRACT(YEAR FROM d)";
     let select = verified_only_select(sql);
