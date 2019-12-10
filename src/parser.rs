@@ -1617,8 +1617,17 @@ impl Parser {
 
     fn parse_array(&mut self) -> Result<Value, ParserError> {
         self.expect_token(&Token::LBracket)?;
-        let values = self.parse_comma_separated(|parser| parser.parse_value())?;
-        self.expect_token(&Token::RBracket)?;
+        let mut values = vec![];
+        loop {
+            if let Some(Token::RBracket) = self.peek_token() {
+                break;
+            }
+            values.push(self.parse_value()?);
+            if !self.consume_token(&Token::Comma) {
+                self.expect_token(&Token::RBracket)?;
+                break;
+            }
+        }
         Ok(Value::Array(values))
     }
 
