@@ -371,6 +371,23 @@ fn parse_array() {
             Value::SingleQuotedString("foo".to_owned())
         ]))
     );
+
+    let select = pg_and_generic().verified_only_select("SELECT ARRAY[]");
+
+    assert_eq!(
+        expr_from_projection(only(&select.projection)),
+        &Expr::Value(Value::Array(vec![]))
+    );
+
+    let select = pg_and_generic().verified_only_select("SELECT ARRAY[1, 'foo']");
+
+    assert_eq!(
+        expr_from_projection(only(&select.projection)),
+        &Expr::Value(Value::Array(vec![
+            Value::Number("1".into()),
+            Value::SingleQuotedString("foo".to_owned())
+        ]))
+    );
 }
 
 #[test]
