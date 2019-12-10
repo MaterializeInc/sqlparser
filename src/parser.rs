@@ -1624,10 +1624,10 @@ impl Parser {
             }
             values.push(self.parse_value()?);
             if !self.consume_token(&Token::Comma) {
-                self.expect_token(&Token::RBracket)?;
                 break;
             }
         }
+        self.expect_token(&Token::RBracket)?;
         Ok(Value::Array(values))
     }
 
