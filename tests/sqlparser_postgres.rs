@@ -358,6 +358,10 @@ fn parse_show() {
 
 #[test]
 fn parse_array() {
+    let expr = pg_and_generic().verified_expr("ARRAY[]");
+
+    assert_eq!(expr, Expr::Value(Value::Array(vec![])));
+
     let expr = pg_and_generic().verified_expr("ARRAY[1, 'foo']");
 
     assert_eq!(
