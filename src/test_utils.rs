@@ -127,6 +127,7 @@ impl TestedDialects {
     /// after a serialization round-trip.
     pub fn verified_expr(&self, sql: &str) -> Expr {
         let ast = self.run_parser_method(sql, Parser::parse_expr).unwrap();
+        dbg!(&ast);
         assert_eq!(sql, &ast.to_string(), "round-tripping without changes");
         ast
     }

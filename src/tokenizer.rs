@@ -69,6 +69,33 @@ pub enum Token {
     Div,
     /// Modulo Operator `%`
     Mod,
+    // Json functions are documented at https://www.postgresql.org/docs/current/functions-json.html
+    /// Get json field operator '->'
+    JsonGet,
+    /// Get json field as text operator '->>'
+    JsonGetAsText,
+    /// Get json path operator '#>'
+    JsonGetPath,
+    /// Get json path as text operator '#>>'
+    JsonGetPathAsText,
+    /// Json contains json operator '@>'
+    JsonContainsJson,
+    /// Json contained-in json operator '<@'
+    JsonContainedInJson,
+    /// Json contains field operator '?'
+    JsonContainsField,
+    /// Json contains any fields operator '?|'
+    JsonContainsAnyFields,
+    /// Json contains any fields operator '?&'
+    JsonContainsAllFields,
+    /// Json concat operator '||'
+    JsonConcat,
+    /// Json delete path operator '#-'
+    JsonDeletePath,
+    /// Json contains path operator '@?'
+    JsonContainsPath,
+    /// Json apply path predicate operator '@@'
+    JsonApplyPathPredicate,
     /// Left parenthesis `(`
     LParen,
     /// Right parenthesis `)`
@@ -118,6 +145,19 @@ impl fmt::Display for Token {
             Token::Mult => f.write_str("*"),
             Token::Div => f.write_str("/"),
             Token::Mod => f.write_str("%"),
+            Token::JsonGet => f.write_str("->"),
+            Token::JsonGetAsText => f.write_str("->>"),
+            Token::JsonGetPath => f.write_str("#>"),
+            Token::JsonGetPathAsText => f.write_str("#>>"),
+            Token::JsonContainsJson => f.write_str("@>"),
+            Token::JsonContainedInJson => f.write_str("<@"),
+            Token::JsonContainsField => f.write_str("?"),
+            Token::JsonContainsAnyFields => f.write_str("?|"),
+            Token::JsonContainsAllFields => f.write_str("?&"),
+            Token::JsonConcat => f.write_str("||"),
+            Token::JsonDeletePath => f.write_str("#-"),
+            Token::JsonContainsPath => f.write_str("@?"),
+            Token::JsonApplyPathPredicate => f.write_str("@@"),
             Token::LParen => f.write_str("("),
             Token::RParen => f.write_str(")"),
             Token::Period => f.write_str("."),
@@ -371,6 +411,13 @@ impl<'a> Tokenizer<'a> {
                             }
                             Ok(Some(Token::Whitespace(Whitespace::SingleLineComment(s))))
                         }
+                        Some('>') => {
+                            chars.next(); // consume the '>'
+                            match chars.peek() {
+                                Some('>') => self.consume_and_return(chars, Token::JsonGetAsText),
+                                _ => Ok(Some(Token::JsonGet)),
+                            }
+                        }
                         // a regular '-' operator
                         _ => Ok(Some(Token::Minus)),
                     }
@@ -389,6 +436,55 @@ impl<'a> Tokenizer<'a> {
                 '+' => self.consume_and_return(chars, Token::Plus),
                 '*' => self.consume_and_return(chars, Token::Mult),
                 '%' => self.consume_and_return(chars, Token::Mod),
+                '#' => {
+                    chars.next(); // consume '#'
+                    match chars.peek() {
+                        Some('>') => {
+                            chars.next(); // consume '>'
+                            match chars.peek() {
+                                Some('>') => {
+                                    self.consume_and_return(chars, Token::JsonGetPathAsText)
+                                }
+                                _ => Ok(Some(Token::JsonGetPath)),
+                            }
+                        }
+                        Some('-') => self.consume_and_return(chars, Token::JsonDeletePath),
+                        _ => Err(TokenizerError(format!(
+                            "Tokenizer Error at Line: {}, Col: {}",
+                            self.line, self.col
+                        ))),
+                    }
+                }
+                '@' => {
+                    chars.next(); // consume '@'
+                    match chars.peek() {
+                        Some('>') => self.consume_and_return(chars, Token::JsonContainsJson),
+                        Some('?') => self.consume_and_return(chars, Token::JsonContainsPath),
+                        Some('@') => self.consume_and_return(chars, Token::JsonApplyPathPredicate),
+                        _ => Err(TokenizerError(format!(
+                            "Tokenizer Error at Line: {}, Col: {}",
+                            self.line, self.col
+                        ))),
+                    }
+                }
+                '?' => {
+                    chars.next(); // consume '?'
+                    match chars.peek() {
+                        Some('|') => self.consume_and_return(chars, Token::JsonContainsAnyFields),
+                        Some('&') => self.consume_and_return(chars, Token::JsonContainsAllFields),
+                        _ => Ok(Some(Token::JsonContainsField)),
+                    }
+                }
+                '|' => {
+                    chars.next(); // consume '|'
+                    match chars.peek() {
+                        Some('|') => self.consume_and_return(chars, Token::JsonConcat),
+                        _ => Err(TokenizerError(format!(
+                            "Tokenizer Error at Line: {}, Col: {}",
+                            self.line, self.col
+                        ))),
+                    }
+                }
                 '=' => self.consume_and_return(chars, Token::Eq),
                 '.' => self.consume_and_return(chars, Token::Period),
                 '!' => {
@@ -406,6 +502,7 @@ impl<'a> Tokenizer<'a> {
                     match chars.peek() {
                         Some('=') => self.consume_and_return(chars, Token::LtEq),
                         Some('>') => self.consume_and_return(chars, Token::Neq),
+                        Some('@') => self.consume_and_return(chars, Token::JsonContainedInJson),
                         _ => Ok(Some(Token::Lt)),
                     }
                 }

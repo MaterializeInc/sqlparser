@@ -48,6 +48,19 @@ pub enum BinaryOperator {
     Or,
     Like,
     NotLike,
+    JsonGet,
+    JsonGetAsText,
+    JsonGetPath,
+    JsonGetPathAsText,
+    JsonContainsJson,
+    JsonContainedInJson,
+    JsonContainsField,
+    JsonContainsAnyFields,
+    JsonContainsAllFields,
+    JsonConcat,
+    JsonDeletePath,
+    JsonContainsPath,
+    JsonApplyPathPredicate,
 }
 
 impl fmt::Display for BinaryOperator {
@@ -68,6 +81,19 @@ impl fmt::Display for BinaryOperator {
             BinaryOperator::Or => "OR",
             BinaryOperator::Like => "LIKE",
             BinaryOperator::NotLike => "NOT LIKE",
+            BinaryOperator::JsonGet => "->",
+            BinaryOperator::JsonGetAsText => "->>",
+            BinaryOperator::JsonGetPath => "#>",
+            BinaryOperator::JsonGetPathAsText => "#>>",
+            BinaryOperator::JsonContainsJson => "@>",
+            BinaryOperator::JsonContainedInJson => "<@",
+            BinaryOperator::JsonContainsField => "?",
+            BinaryOperator::JsonContainsAnyFields => "?|",
+            BinaryOperator::JsonContainsAllFields => "?&",
+            BinaryOperator::JsonConcat => "||",
+            BinaryOperator::JsonDeletePath => "#-",
+            BinaryOperator::JsonContainsPath => "@?",
+            BinaryOperator::JsonApplyPathPredicate => "@@",
         })
     }
 }
