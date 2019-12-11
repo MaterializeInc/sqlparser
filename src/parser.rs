@@ -438,7 +438,7 @@ impl Parser {
 
     pub fn parse_extract_expr(&mut self) -> Result<Expr, ParserError> {
         self.expect_token(&Token::LParen)?;
-        let field = self.parse_date_time_field()?;
+        let field = self.parse_extract_field()?;
         self.expect_keyword("FROM")?;
         let expr = self.parse_expr()?;
         self.expect_token(&Token::RParen)?;
@@ -482,6 +482,20 @@ impl Parser {
             "MINUTE" => Ok(DateTimeField::Minute),
             "SECOND" => Ok(DateTimeField::Second),
             _ => parser_err!("Expected date/time field, found: {}", s),
+        }
+    }
+
+    /// Parse the kinds of things that can be fed to EXTRACT and DATE_TRUNC
+    pub fn parse_extract_field(&mut self) -> Result<ExtractField, ParserError> {
+        let tok = self.next_token();
+        let field: Result<ExtractField, _> = match tok {
+            Some(Token::Word(ref k)) => k.keyword.parse(),
+            Some(Token::SingleQuotedString(ref s)) => s.parse(),
+            _ => return self.expected("extract field token", tok),
+        };
+        match field {
+            Ok(f) => Ok(f),
+            Err(_) => self.expected("valid extract field", tok)?,
         }
     }
 

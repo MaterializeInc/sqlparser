@@ -194,10 +194,7 @@ fn potential_interval_tokens(from: &DateTimeField) -> Vec<IntervalToken> {
     all_toks[offset..].to_vec()
 }
 
-fn build_timezone_offset_second(
-    tokens: &[IntervalToken],
-    value: &str,
-) -> Result<i64, ParserError> {
+fn build_timezone_offset_second(tokens: &[IntervalToken], value: &str) -> Result<i64, ParserError> {
     use IntervalToken::*;
     let all_formats = [
         vec![Plus, Num(0), Colon, Num(0)],

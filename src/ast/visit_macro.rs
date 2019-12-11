@@ -234,11 +234,13 @@ macro_rules! make_visitor {
                 visit_collate(self, expr, collation)
             }
 
-            fn visit_extract(&mut self, field: &'ast $($mut)* DateTimeField, expr: &'ast $($mut)* Expr) {
+            fn visit_extract(&mut self, field: &'ast $($mut)* ExtractField, expr: &'ast $($mut)* Expr) {
                 visit_extract(self, field, expr)
             }
 
             fn visit_date_time_field(&mut self, _field: &'ast $($mut)* DateTimeField) {}
+
+            fn visit_extract_field(&mut self, _field: &'ast $($mut)* ExtractField) {}
 
             fn visit_nested(&mut self, expr: &'ast $($mut)* Expr) {
                 visit_nested(self, expr)
@@ -1082,10 +1084,10 @@ macro_rules! make_visitor {
 
         pub fn visit_extract<'ast, V: $name<'ast> + ?Sized>(
             visitor: &mut V,
-            field: &'ast $($mut)* DateTimeField,
+            field: &'ast $($mut)* ExtractField,
             expr: &'ast $($mut)* Expr,
         ) {
-            visitor.visit_date_time_field(field);
+            visitor.visit_extract_field(field);
             visitor.visit_expr(expr);
         }
 

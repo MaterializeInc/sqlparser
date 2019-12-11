@@ -920,7 +920,7 @@ fn parse_extract() {
     let select = verified_only_select(sql);
     assert_eq!(
         &Expr::Extract {
-            field: DateTimeField::Year,
+            field: ExtractField::Year,
             expr: Box::new(Expr::Identifier(Ident::new("d"))),
         },
         expr_from_projection(only(&select.projection)),
@@ -928,15 +928,44 @@ fn parse_extract() {
 
     one_statement_parses_to("SELECT EXTRACT(year from d)", "SELECT EXTRACT(YEAR FROM d)");
 
-    verified_stmt("SELECT EXTRACT(MONTH FROM d)");
-    verified_stmt("SELECT EXTRACT(DAY FROM d)");
-    verified_stmt("SELECT EXTRACT(HOUR FROM d)");
-    verified_stmt("SELECT EXTRACT(MINUTE FROM d)");
-    verified_stmt("SELECT EXTRACT(SECOND FROM d)");
+    for extract_field in &[
+        "MILLENIUM",
+        "CENTURY",
+        "DECADE",
+        "YEAR",
+        "ISOYEAR",
+        "QUARTER",
+        "MONTH",
+        "DAY",
+        "HOUR",
+        "MINUTE",
+        "SECOND",
+        "MILLISECONDS",
+        "MICROSECONDS",
+        "TIMEZONE",
+        "TIMEZONE_HOUR",
+        "TIMEZONE_MINUTE",
+        "WEEK",
+        "DOY",
+        "DOW",
+        "ISODOW",
+        "EPOCH",
+    ] {
+        let unquoted = format!("SELECT EXTRACT({} FROM d)", extract_field);
+        verified_stmt(&unquoted);
+        // Quoted strings do not re-serialize to the same thing that they were
+        // parsed from, while not ideal databases only supports literal
+        // strings, (not column values) for `extract`, so it's not like this
+        // can be confused for a column
+        one_statement_parses_to(
+            &format!("SELECT EXTRACT('{}' FROM d)", extract_field),
+            &unquoted,
+        );
+    }
 
     let res = parse_sql_statements("SELECT EXTRACT(MILLISECOND FROM d)");
     assert_eq!(
-        ParserError::ParserError("Expected date/time field, found: MILLISECOND".to_string()),
+        ParserError::ParserError("Expected valid extract field, found: MILLISECOND".to_string()),
         res.unwrap_err()
     );
 }
