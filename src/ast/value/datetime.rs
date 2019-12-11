@@ -389,3 +389,102 @@ impl Iterator for DateTimeFieldIterator {
         self.0.clone()
     }
 }
+
+/// Similar to a [`DateTimeField`], but with a few more options
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum ExtractField {
+    Millenium,
+    Century,
+    Decade,
+    Year,
+    /// The ISO Week-Numbering year
+    ///
+    /// See https://en.wikipedia.org/wiki/ISO_week_date
+    IsoYear,
+    Quarter,
+    Month,
+    Day,
+    Hour,
+    Minute,
+    Second,
+    Milliseconds,
+    Microseconds,
+    // Weirder fields
+    Timezone,
+    TimezoneHour,
+    TimezoneMinute,
+    WeekOfYear,
+    /// The day of the year (1 - 365/366)
+    DayOfYear,
+    /// The day of the week (0 - 6; Sunday is 0)
+    DayOfWeek,
+    /// The day of the week (1 - 7; Sunday is 7)
+    IsoDayOfWeek,
+    /// The number of seconds
+    ///
+    /// * for DateTime fields, the number of seconds since 1970-01-01 00:00:00-00
+    /// * for intervals, the total number of seconds in the interval
+    Epoch,
+}
+
+impl fmt::Display for ExtractField {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            ExtractField::Millenium => f.write_str("MILLENIUM"),
+            ExtractField::Century => f.write_str("CENTURY"),
+            ExtractField::Decade => f.write_str("DECADE"),
+            ExtractField::Year => f.write_str("YEAR"),
+            ExtractField::IsoYear => f.write_str("ISOYEAR"),
+            ExtractField::Quarter => f.write_str("QUARTER"),
+            ExtractField::Month => f.write_str("MONTH"),
+            ExtractField::Day => f.write_str("DAY"),
+            ExtractField::Hour => f.write_str("HOUR"),
+            ExtractField::Minute => f.write_str("MINUTE"),
+            ExtractField::Second => f.write_str("SECOND"),
+            ExtractField::Milliseconds => f.write_str("MILLISECONDS"),
+            ExtractField::Microseconds => f.write_str("MICROSECONDS"),
+            // Weirder fields
+            ExtractField::Timezone => f.write_str("TIMEZONE"),
+            ExtractField::TimezoneHour => f.write_str("TIMEZONE_HOUR"),
+            ExtractField::TimezoneMinute => f.write_str("TIMEZONE_MINUTE"),
+            ExtractField::WeekOfYear => f.write_str("WEEK"),
+            ExtractField::DayOfYear => f.write_str("DOY"),
+            ExtractField::DayOfWeek => f.write_str("DOW"),
+            ExtractField::IsoDayOfWeek => f.write_str("ISODOW"),
+            ExtractField::Epoch => f.write_str("EPOCH"),
+        }
+    }
+}
+
+use std::str::FromStr;
+
+impl FromStr for ExtractField {
+    type Err = ValueError;
+    fn from_str(s: &str) -> Result<ExtractField, Self::Err> {
+        Ok(match &*s.to_uppercase() {
+            "MILLENIUM" => ExtractField::Millenium,
+            "CENTURY" => ExtractField::Century,
+            "DECADE" => ExtractField::Decade,
+            "YEAR" => ExtractField::Year,
+            "ISOYEAR" => ExtractField::IsoYear,
+            "QUARTER" => ExtractField::Quarter,
+            "MONTH" => ExtractField::Month,
+            "DAY" => ExtractField::Day,
+            "HOUR" => ExtractField::Hour,
+            "MINUTE" => ExtractField::Minute,
+            "SECOND" => ExtractField::Second,
+            "MILLISECONDS" => ExtractField::Milliseconds,
+            "MICROSECONDS" => ExtractField::Microseconds,
+            // Weirder fields
+            "TIMEZONE" => ExtractField::Timezone,
+            "TIMEZONE_HOUR" => ExtractField::TimezoneHour,
+            "TIMEZONE_MINUTE" => ExtractField::TimezoneMinute,
+            "WEEK" => ExtractField::WeekOfYear,
+            "DOY" => ExtractField::DayOfYear,
+            "DOW" => ExtractField::DayOfWeek,
+            "ISODOW" => ExtractField::IsoDayOfWeek,
+            "EPOCH" => ExtractField::Epoch,
+            _ => return Err(ValueError(format!("invalid EXTRACT specifier: {}", s))),
+        })
+    }
+}

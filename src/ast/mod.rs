@@ -50,7 +50,8 @@ pub use self::query::{
     SetExpr, SetOperator, TableAlias, TableFactor, TableWithJoins, Values,
 };
 pub use self::value::{
-    DateTimeField, Interval, IntervalValue, ParsedDate, ParsedDateTime, ParsedTimestamp, Value,
+    DateTimeField, ExtractField, Interval, IntervalValue, ParsedDate, ParsedDateTime,
+    ParsedTimestamp, Value,
 };
 
 struct DisplaySeparated<'a, T>
@@ -216,7 +217,7 @@ pub enum Expr {
         data_type: DataType,
     },
     Extract {
-        field: DateTimeField,
+        field: ExtractField,
         expr: Box<Expr>,
     },
     /// `expr COLLATE collation`
