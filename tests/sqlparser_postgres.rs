@@ -14,6 +14,7 @@
 //! Test SQL syntax specific to PostgreSQL. The parser based on the
 //! generic dialect is also tested (on the inputs it can handle).
 
+use matches::assert_matches;
 use sqlparser::ast::*;
 use sqlparser::dialect::{GenericDialect, PostgreSqlDialect};
 use sqlparser::parser::ParserError;
@@ -403,6 +404,34 @@ fn parse_array_datatype() {
         },
         expr_from_projection(only(&select.projection))
     );
+}
+
+#[test]
+fn parse_json_ops() {
+    use self::BinaryOperator::*;
+    use self::Expr::*;
+
+    for (op_string, op_enum) in vec![
+        ("->", JsonGet),
+        ("->>", JsonGetAsText),
+        ("#>", JsonGetPath),
+        ("#>>", JsonGetPathAsText),
+        ("@>", JsonContainsJson),
+        ("<@", JsonContainedInJson),
+        ("?", JsonContainsField),
+        ("?|", JsonContainsAnyFields),
+        ("?&", JsonContainsAllFields),
+        ("||", JsonConcat),
+        ("#-", JsonDeletePath),
+        ("@?", JsonContainsPath),
+        ("@@", JsonApplyPathPredicate),
+    ] {
+        let sql = format!("a {} b", op_string);
+        assert_matches!(
+            &pg().verified_expr(&sql),
+            BinaryOp {op, ..} if *op == op_enum
+        );
+    }
 }
 
 fn pg() -> TestedDialects {

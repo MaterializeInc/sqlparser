@@ -769,6 +769,19 @@ impl Parser {
             Token::Mult => Some(BinaryOperator::Multiply),
             Token::Mod => Some(BinaryOperator::Modulus),
             Token::Div => Some(BinaryOperator::Divide),
+            Token::JsonGet => Some(BinaryOperator::JsonGet),
+            Token::JsonGetAsText => Some(BinaryOperator::JsonGetAsText),
+            Token::JsonGetPath => Some(BinaryOperator::JsonGetPath),
+            Token::JsonGetPathAsText => Some(BinaryOperator::JsonGetPathAsText),
+            Token::JsonContainsJson => Some(BinaryOperator::JsonContainsJson),
+            Token::JsonContainedInJson => Some(BinaryOperator::JsonContainedInJson),
+            Token::JsonContainsField => Some(BinaryOperator::JsonContainsField),
+            Token::JsonContainsAnyFields => Some(BinaryOperator::JsonContainsAnyFields),
+            Token::JsonContainsAllFields => Some(BinaryOperator::JsonContainsAllFields),
+            Token::JsonConcat => Some(BinaryOperator::JsonConcat),
+            Token::JsonDeletePath => Some(BinaryOperator::JsonDeletePath),
+            Token::JsonContainsPath => Some(BinaryOperator::JsonContainsPath),
+            Token::JsonApplyPathPredicate => Some(BinaryOperator::JsonApplyPathPredicate),
             Token::Word(ref k) => match k.keyword.as_ref() {
                 "AND" => Some(BinaryOperator::And),
                 "OR" => Some(BinaryOperator::Or),
@@ -982,6 +995,20 @@ impl Parser {
                 Token::Plus | Token::Minus => Ok(Self::PLUS_MINUS_PREC),
                 Token::Mult | Token::Div | Token::Mod => Ok(40),
                 Token::DoubleColon => Ok(50),
+                // TODO(jamii) it's not clear what precedence postgres gives to json operators
+                Token::JsonGet
+                | Token::JsonGetAsText
+                | Token::JsonGetPath
+                | Token::JsonGetPathAsText
+                | Token::JsonContainsJson
+                | Token::JsonContainedInJson
+                | Token::JsonContainsField
+                | Token::JsonContainsAnyFields
+                | Token::JsonContainsAllFields
+                | Token::JsonConcat
+                | Token::JsonDeletePath
+                | Token::JsonContainsPath
+                | Token::JsonApplyPathPredicate => Ok(1),
                 _ => Ok(0),
             }
         } else {
