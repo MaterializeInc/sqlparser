@@ -387,11 +387,35 @@ impl<'a> Tokenizer<'a> {
                 }
                 // numbers
                 '0'..='9' => {
-                    // TODO: https://jakewheat.github.io/sql-overview/sql-2011-foundation-grammar.html#unsigned-numeric-literal
-                    let s = peeking_take_while(chars, |ch| match ch {
-                        '0'..='9' | '.' => true,
+                    let mut seen_decimal = false;
+                    let mut s = peeking_take_while(chars, |ch| match ch {
+                        '0'..='9' => true,
+                        '.' if !seen_decimal => {
+                            seen_decimal = true;
+                            true
+                        }
                         _ => false,
                     });
+                    // If in e-notation, parse the e-notation with special care given to negative exponents.
+                    match chars.peek() {
+                        Some('e') | Some('E') => {
+                            s.push('E');
+                            // Consume the e-notation signifier.
+                            chars.next();
+                            if let Some('-') = chars.peek() {
+                                s.push('-');
+                                // Consume the negative sign.
+                                chars.next();
+                            }
+                            let e = peeking_take_while(chars, |ch| match ch {
+                                '0'..='9' => true,
+                                _ => false,
+                            });
+                            s.push_str(&e);
+                        }
+                        _ => {}
+                    }
+
                     Ok(Some(Token::Number(s)))
                 }
                 // punctuation

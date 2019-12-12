@@ -487,6 +487,20 @@ fn parse_number() {
 }
 
 #[test]
+fn parse_approximate_numeric_literal() {
+    let expr = verified_expr("1.0E2");
+
+    #[cfg(feature = "bigdecimal")]
+    assert_eq!(
+        expr,
+        Expr::Value(Value::Number(bigdecimal::BigDecimal::from(10)))
+    );
+
+    #[cfg(not(feature = "bigdecimal"))]
+    assert_eq!(expr, Expr::Value(Value::Number("1.0E2".into())));
+}
+
+#[test]
 fn parse_compound_expr_1() {
     use self::BinaryOperator::*;
     use self::Expr::*;
