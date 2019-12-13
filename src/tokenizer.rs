@@ -386,38 +386,7 @@ impl<'a> Tokenizer<'a> {
                     }
                 }
                 // numbers
-                '0'..='9' => {
-                    let mut seen_decimal = false;
-                    let mut s = peeking_take_while(chars, |ch| match ch {
-                        '0'..='9' => true,
-                        '.' if !seen_decimal => {
-                            seen_decimal = true;
-                            true
-                        }
-                        _ => false,
-                    });
-                    // If in e-notation, parse the e-notation with special care given to negative exponents.
-                    match chars.peek() {
-                        Some('e') | Some('E') => {
-                            s.push('E');
-                            // Consume the e-notation signifier.
-                            chars.next();
-                            if let Some('-') = chars.peek() {
-                                s.push('-');
-                                // Consume the negative sign.
-                                chars.next();
-                            }
-                            let e = peeking_take_while(chars, |ch| match ch {
-                                '0'..='9' => true,
-                                _ => false,
-                            });
-                            s.push_str(&e);
-                        }
-                        _ => {}
-                    }
-
-                    Ok(Some(Token::Number(s)))
-                }
+                '0'..='9' => self.tokenize_number(chars),
                 // punctuation
                 '(' => self.consume_and_return(chars, Token::LParen),
                 ')' => self.consume_and_return(chars, Token::RParen),
@@ -510,7 +479,22 @@ impl<'a> Tokenizer<'a> {
                     }
                 }
                 '=' => self.consume_and_return(chars, Token::Eq),
-                '.' => self.consume_and_return(chars, Token::Period),
+                '.' => {
+                    chars.next(); // consume '.'
+                    match chars.peek() {
+                        Some('0'..='9') => {
+                            // Add the '.' back to the chars and parse as number.
+                            let mut chars_w_leading_zero = ".".to_string();
+                            while let Some(token) = chars.next() {
+                                chars_w_leading_zero.push(token);
+                            }
+                            let mut peekable = chars_w_leading_zero.chars().peekable();
+
+                            self.tokenize_number(&mut peekable)
+                        }
+                        _ => Ok(Some(Token::Period)),
+                    }
+                }
                 '!' => {
                     chars.next(); // consume
                     match chars.peek() {
@@ -650,6 +634,42 @@ impl<'a> Tokenizer<'a> {
         }
 
         Ok(Some(Token::Parameter(n)))
+    }
+
+    fn tokenize_number(
+        &self,
+        chars: &mut Peekable<Chars<'_>>,
+    ) -> Result<Option<Token>, TokenizerError> {
+        let mut seen_decimal = false;
+        let mut s = peeking_take_while(chars, |ch| match ch {
+            '0'..='9' => true,
+            '.' if !seen_decimal => {
+                seen_decimal = true;
+                true
+            }
+            _ => false,
+        });
+        // If in e-notation, parse the e-notation with special care given to negative exponents.
+        match chars.peek() {
+            Some('e') | Some('E') => {
+                s.push('E');
+                // Consume the e-notation signifier.
+                chars.next();
+                if let Some('-') = chars.peek() {
+                    s.push('-');
+                    // Consume the negative sign.
+                    chars.next();
+                }
+                let e = peeking_take_while(chars, |ch| match ch {
+                    '0'..='9' => true,
+                    _ => false,
+                });
+                s.push_str(&e);
+            }
+            _ => {}
+        }
+
+        Ok(Some(Token::Number(s)))
     }
 
     fn consume_and_return(
