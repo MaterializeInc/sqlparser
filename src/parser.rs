@@ -1238,7 +1238,7 @@ impl Parser {
             let schema = if self.parse_keyword("REGISTRY") {
                 SourceSchema::Registry(self.parse_literal_string()?)
             } else {
-                SourceSchema::Raw(self.parse_literal_string()?)
+                SourceSchema::RawOrPath(self.parse_literal_string()?)
             };
             Some(schema)
         } else {

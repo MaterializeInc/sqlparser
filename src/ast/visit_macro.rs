@@ -1292,7 +1292,7 @@ macro_rules! make_visitor {
             source_schema: &'ast $($mut)* SourceSchema,
         ) {
             match source_schema {
-                SourceSchema::Raw(schema) => visitor.visit_literal_string(schema),
+                SourceSchema::RawOrPath(schema) => visitor.visit_literal_string(schema),
                 SourceSchema::Registry(url) => visitor.visit_literal_string(url),
             }
         }
