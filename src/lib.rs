@@ -33,6 +33,7 @@
 //! println!("AST: {:?}", ast);
 //! ```
 #![warn(clippy::all)]
+#![allow(clippy::unneeded_field_pattern)]
 
 pub mod ast;
 pub mod dialect;
