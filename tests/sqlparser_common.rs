@@ -2878,13 +2878,44 @@ fn parse_create_source_raw_schema() {
         } => {
             assert_eq!("foo", name.to_string());
             assert_eq!("bar", url);
-            assert_eq!(SourceSchema::Raw("baz".into()), schema.unwrap());
+            assert_eq!(SourceSchema::RawOrPath("baz".into()), schema.unwrap());
             assert_eq!(
                 with_options,
                 vec![SqlOption {
                     name: "name".into(),
                     value: Value::SingleQuotedString("val".into())
                 },]
+            );
+        }
+        _ => assert!(false),
+    }
+}
+
+#[test]
+fn parse_create_source_path_schema_multiple_args() {
+    let sql = "CREATE SOURCE foo FROM 'bar' USING SCHEMA 'path' WITH (format = 'someformat', message_name = 'somemessage')";
+    match verified_stmt(sql) {
+        Statement::CreateSource {
+            name,
+            url,
+            schema,
+            with_options,
+        } => {
+            assert_eq!("foo", name.to_string());
+            assert_eq!("bar", url);
+            assert_eq!(SourceSchema::RawOrPath("path".into()), schema.unwrap());
+            assert_eq!(
+                with_options,
+                vec![
+                    SqlOption {
+                        name: "format".into(),
+                        value: Value::SingleQuotedString("someformat".into())
+                    },
+                    SqlOption {
+                        name: "message_name".into(),
+                        value: Value::SingleQuotedString("somemessage".into())
+                    },
+                ]
             );
         }
         _ => assert!(false),
